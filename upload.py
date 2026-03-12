@@ -10,10 +10,27 @@ import os
 import random
 import time
 import hashlib
+from datetime import datetime, timezone, timedelta
 import requests
 from requests_oauthlib import OAuth1
 
-GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID", "")
+JST = timezone(timedelta(hours=9))
+
+# 金曜21時JST → 専用フォルダ、それ以外 → デフォルトフォルダ
+GDRIVE_FOLDER_ID_FRIDAY = os.environ.get("GDRIVE_FOLDER_ID_FRIDAY", "")
+GDRIVE_FOLDER_ID_DEFAULT = os.environ.get("GDRIVE_FOLDER_ID_DEFAULT", "")
+
+
+def get_gdrive_folder_id():
+    """現在時刻（JST）に応じてGoogle DriveフォルダIDを選択"""
+    now_jst = datetime.now(JST)
+    is_friday_21 = (now_jst.weekday() == 4 and now_jst.hour == 21)
+    if is_friday_21 and GDRIVE_FOLDER_ID_FRIDAY:
+        print(f"金曜21時モード: Friday専用フォルダを使用")
+        return GDRIVE_FOLDER_ID_FRIDAY
+    else:
+        print(f"通常モード: デフォルトフォルダを使用 (JST {now_jst.strftime('%A %H:%M')})")
+        return GDRIVE_FOLDER_ID_DEFAULT
 PATREON_LINK = "https://www.patreon.com/cw/MuscleLove"
 VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 MAX_FILE_SIZE = 512 * 1024 * 1024
@@ -88,7 +105,11 @@ def download_videos():
     import gdown
     dl_dir = "videos"
     os.makedirs(dl_dir, exist_ok=True)
-    url = f"https://drive.google.com/drive/folders/{GDRIVE_FOLDER_ID}"
+    folder_id = get_gdrive_folder_id()
+    if not folder_id:
+        print("Error: GDRIVE_FOLDER_ID not set")
+        return []
+    url = f"https://drive.google.com/drive/folders/{folder_id}"
     print(f"Downloading from Google Drive: {url}")
     try:
         gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)

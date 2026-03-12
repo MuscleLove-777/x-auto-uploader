@@ -7,6 +7,8 @@ on:
     - cron: '0 3 * * *'
     - cron: '0 9 * * *'
     - cron: '0 15 * * *'
+    # 金曜 JST 21:00 = UTC 12:00 (金曜専用フォルダ)
+    - cron: '0 12 * * 5'
   workflow_dispatch:
 
 jobs:
@@ -37,7 +39,8 @@ jobs:
           X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
+          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
         run: python upload.py
 
       - name: Save uploaded log
