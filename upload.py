@@ -36,7 +36,7 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 MAX_FILE_SIZE = 512 * 1024 * 1024
 MAX_DURATION_SEC = 140
 UPLOADED_LOG = "uploaded.json"
-MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
+MEDIA_UPLOAD_URL = "https://upload.x.com/2/media/upload"
 TWEET_URL = "https://api.x.com/2/tweets"
 
 # --- タグマッピング ---
@@ -357,7 +357,11 @@ def main():
 
     except requests.exceptions.HTTPError as e:
         print(f"HTTP Error: {e}")
-        print(f"Response: {e.response.text if e.response else 'N/A'}")
+        if e.response is not None:
+            print(f"Status: {e.response.status_code}")
+            print(f"Response: {e.response.text}")
+        else:
+            print("Response: N/A")
         return 1
     except Exception as e:
         print(f"Upload error: {e}")
