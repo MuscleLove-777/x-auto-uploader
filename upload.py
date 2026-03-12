@@ -36,7 +36,7 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 MAX_FILE_SIZE = 512 * 1024 * 1024
 MAX_DURATION_SEC = 140
 UPLOADED_LOG = "uploaded.json"
-MEDIA_UPLOAD_URL = "https://upload.x.com/2/media/upload"
+MEDIA_UPLOAD_URL = "https://api.x.com/2/media/upload"
 TWEET_URL = "https://api.x.com/2/tweets"
 
 # --- タグマッピング ---
