@@ -206,7 +206,7 @@ def upload_media_append(auth, media_id, file_path, chunk_size=4 * 1024 * 1024):
                     "media_id": media_id,
                     "segment_index": segment,
                 },
-                files={"media_data": chunk},
+                files={"media": chunk},
                 auth=auth,
             )
             resp.raise_for_status()
