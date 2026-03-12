@@ -36,7 +36,7 @@ VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 MAX_FILE_SIZE = 512 * 1024 * 1024
 MAX_DURATION_SEC = 140
 UPLOADED_LOG = "uploaded.json"
-MEDIA_UPLOAD_URL = "https://api.x.com/2/media/upload"
+MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 TWEET_URL = "https://api.x.com/2/tweets"
 
 # --- タグマッピング ---
@@ -217,6 +217,7 @@ def upload_media_append(auth, media_id, file_path, chunk_size=4 * 1024 * 1024):
 
 def upload_media_finalize(auth, media_id):
     """FINALIZE: アップロード完了"""
+    print(f"FINALIZE request: media_id={media_id}")
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={
@@ -225,6 +226,8 @@ def upload_media_finalize(auth, media_id):
         },
         auth=auth,
     )
+    print(f"FINALIZE status: {resp.status_code}")
+    print(f"FINALIZE response: {resp.text}")
     resp.raise_for_status()
     result = resp.json()
     print(f"FINALIZE OK: {result}")
