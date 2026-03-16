@@ -332,8 +332,19 @@ def main():
     fname = os.path.basename(video)
     print(f"Selected: {fname}")
 
-    # タグ生成 & ツイート本文作成
+    # タグ生成 & トレンドタグ追加 & ツイート本文作成
     tags = generate_tags(video)
+
+    # Google Trendsからトレンドタグを追加
+    from trending import get_trending_tags
+    trend_tags = get_trending_tags(max_tags=5)
+    if trend_tags:
+        seen = {t.lower() for t in tags}
+        for t in trend_tags:
+            if t.lower() not in seen:
+                tags.append(t)
+                seen.add(t.lower())
+
     tweet_text = build_tweet_text(video, tags)
     sensitive = is_nsfw(video)
     print(f"Tags: {', '.join(tags[:10])}...")
