@@ -8,6 +8,7 @@ import sys
 import json
 import os
 import random
+import re
 import time
 import hashlib
 from datetime import datetime, timezone, timedelta
@@ -69,6 +70,9 @@ BASE_TAGS = [
 
 # NSFWを判定するキーワード
 NSFW_KEYWORDS = {'nsfw', 'sexy', 'adult', 'nude', 'bikini', 'erotic', 'hot', 'エロ'}
+
+# 絶対にツイートに出してはいけないNGワード（個人名等）
+NG_WORDS = {'アツロウ', 'あつろう', 'atsuro', 'atsurou', 'アツロー'}
 
 # ツイート本文テンプレート（ランダム選択）
 TWEET_TEMPLATES = [
@@ -176,6 +180,14 @@ def generate_tags(video_path):
     return unique_tags
 
 
+def sanitize_text(text):
+    """NGワードが含まれていたら除去する"""
+    sanitized = text
+    for ng in NG_WORDS:
+        sanitized = re.sub(re.escape(ng), '', sanitized, flags=re.IGNORECASE)
+    return sanitized
+
+
 def build_tweet_text(video_path, tags):
     """ツイート本文を生成"""
     parts = video_path.replace('\\', '/').split('/')
@@ -184,13 +196,18 @@ def build_tweet_text(video_path, tags):
         if p not in ['videos', ''] and '.' not in p:
             category = p
             break
+    # categoryからNGワードを除去
+    category = sanitize_text(category).strip() or "Muscle"
     hashtags = ' '.join([f'#{t}' for t in tags[:15]])
     template = random.choice(TWEET_TEMPLATES)
-    return template.format(
+    tweet = template.format(
         category=category,
         hashtags=hashtags,
         patreon=PATREON_LINK,
     )
+    # 最終防御: ツイート全体からもNGワードを除去
+    tweet = sanitize_text(tweet)
+    return tweet
 
 
 # --- メディアアップロード（chunked） ---
