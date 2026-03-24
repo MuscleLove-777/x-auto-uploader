@@ -83,9 +83,9 @@ TWEET_TEMPLATES = [
     "POV: カイの{category}に目が離せない🔥\nNo cap, this is peak muscle♡\n\n{hashtags}\n\n{patreon}",
     "Real ones know💪 {category}ガチ勢だけ来い\nThe grind never stops✨\n\n{hashtags}\n\n{patreon}",
     # カジュアルモード (4)
-    "いやこの{category}どうなってんのｗｗ💪\nアツロウびっくりしたわ( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
+    "いやこの{category}どうなってんのｗｗ💪\nびっくりしたわ( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
     "ましろの{category}やばすぎて二度見したｗｗ🔥\nこれマジ？ってなるやつ( ´∀｀ )\n\n{hashtags}\n\n✨ {patreon}",
-    "今日の{category}えっぐｗｗｗ💪\nアツロウ的に過去イチかもしれん( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
+    "今日の{category}えっぐｗｗｗ💪\n個人的に過去イチかもしれん( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
     "アヤネの{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごいわ( ´∀｀ )✨\n\n{hashtags}\n\n{patreon}",
     # ストレート欲望モード (4)
     "紫苑の{category}、汗ばんだ肌がたまらない🔥\n全部晒してあげる♡\n\n{hashtags}\n\n💪 {patreon}",
