@@ -2,13 +2,8 @@ name: X Auto Upload
 
 on:
   schedule:
-    # JST 6:00, 12:00, 18:00, 24:00 = UTC 21:00(前日), 03:00, 09:00, 15:00
-    - cron: '0 21 * * *'
+    # 毎日 JST 12:00 (UTC 3:00)
     - cron: '0 3 * * *'
-    - cron: '0 9 * * *'
-    - cron: '0 15 * * *'
-    # 金曜 JST 21:00 = UTC 12:00 (金曜専用フォルダ)
-    - cron: '0 12 * * 5'
   workflow_dispatch:
 
 permissions:
