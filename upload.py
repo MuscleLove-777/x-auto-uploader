@@ -77,30 +77,39 @@ NG_WORDS = {'アツロウ', 'あつろう', 'atsuro', 'atsurou', 'アツロー'}
 # ツイート本文テンプレート（ランダム選択）
 TWEET_TEMPLATES = [
     # 煽りモード (4)
-    "凛花の{category}…チラ見せだけで我慢できる？🔥\n全部見たいなら覚悟して♡\n\n{hashtags}\n\n💪 {patreon}",
-    "この{category}、匂わせじゃないよ？ガチだよ？✨\n…続き、気にならないフリしてない？笑\n\n{hashtags}\n\n🔥 {patreon}",
-    "ねぇ、この{category}スルーできるの？💪\n紫苑の本気、まだ序章なんだけど♡\n\n{hashtags}\n\n{patreon}",
-    "まだ見てないの？この{category}🔥\n知らないままでいいの？♡\n\n{hashtags}\n\n✨ {patreon}",
+    "凛花の{category}…チラ見せだけで我慢できる？🔥\n全部見たいなら覚悟して♡\n\n{hashtags}",
+    "この{category}、匂わせじゃないよ？ガチだよ？✨\n…続き、気にならないフリしてない？笑\n\n{hashtags}",
+    "ねぇ、この{category}スルーできるの？💪\n紫苑の本気、まだ序章なんだけど♡\n\n{hashtags}",
+    "まだ見てないの？この{category}🔥\n知らないままでいいの？♡\n\n{hashtags}",
     # トレンド意識モード (4)
-    "Today's vibe: {category}💪\nこの仕上がり、literally insane🔥\n\n{hashtags}\n\n{patreon}",
-    "{category} hits different today✨\nバズる前に見とけ💪\n\n{hashtags}\n\n🔥 {patreon}",
-    "POV: カイの{category}に目が離せない🔥\nNo cap, this is peak muscle♡\n\n{hashtags}\n\n{patreon}",
-    "Real ones know💪 {category}ガチ勢だけ来い\nThe grind never stops✨\n\n{hashtags}\n\n{patreon}",
+    "Today's vibe: {category}💪\nこの仕上がり、literally insane🔥\n\n{hashtags}",
+    "{category} hits different today✨\nバズる前に見とけ💪\n\n{hashtags}",
+    "POV: カイの{category}に目が離せない🔥\nNo cap, this is peak muscle♡\n\n{hashtags}",
+    "Real ones know💪 {category}ガチ勢だけ来い\nThe grind never stops✨\n\n{hashtags}",
     # カジュアルモード (4)
-    "いやこの{category}どうなってんのｗｗ💪\nびっくりしたわ( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
-    "ましろの{category}やばすぎて二度見したｗｗ🔥\nこれマジ？ってなるやつ( ´∀｀ )\n\n{hashtags}\n\n✨ {patreon}",
-    "今日の{category}えっぐｗｗｗ💪\n個人的に過去イチかもしれん( ´∀｀ )\n\n{hashtags}\n\n{patreon}",
-    "アヤネの{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごいわ( ´∀｀ )✨\n\n{hashtags}\n\n{patreon}",
+    "いやこの{category}どうなってんのｗｗ💪\nびっくりしたわ( ´∀｀ )\n\n{hashtags}",
+    "ましろの{category}やばすぎて二度見したｗｗ🔥\nこれマジ？ってなるやつ( ´∀｀ )\n\n{hashtags}",
+    "今日の{category}えっぐｗｗｗ💪\n個人的に過去イチかもしれん( ´∀｀ )\n\n{hashtags}",
+    "アヤネの{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごいわ( ´∀｀ )✨\n\n{hashtags}",
     # ストレート欲望モード (4)
-    "紫苑の{category}、汗ばんだ肌がたまらない🔥\n全部晒してあげる♡\n\n{hashtags}\n\n💪 {patreon}",
-    "この{category}に触れたくなるでしょ？✨\n凛花の鍛え抜いた身体、独り占めして♡\n\n{hashtags}\n\n🔥 {patreon}",
-    "ましろの{category}、無防備すぎて罪深い💪\n隅々まで堪能して♡\n\n{hashtags}\n\n{patreon}",
-    "限界まで追い込んだ{category}の肉体美🔥\nカイの全てを受け止めて♡\n\n{hashtags}\n\n✨ {patreon}",
+    "紫苑の{category}、汗ばんだ肌がたまらない🔥\n全部晒してあげる♡\n\n{hashtags}",
+    "この{category}に触れたくなるでしょ？✨\n凛花の鍛え抜いた身体、独り占めして♡\n\n{hashtags}",
+    "ましろの{category}、無防備すぎて罪深い💪\n隅々まで堪能して♡\n\n{hashtags}",
+    "限界まで追い込んだ{category}の肉体美🔥\nカイの全てを受け止めて♡\n\n{hashtags}",
     # ビジュアル重視モード (4)
-    "🔥 {category} 🔥\n\n{hashtags}\n\n💪 {patreon}",
-    "{category}✨\nNo words needed♡\n\n{hashtags}\n\n🔥 {patreon}",
-    "💪 POWER × BEAUTY 💪\n{category}\n\n{hashtags}\n\n✨ {patreon}",
-    "♡ {category} ♡\n美しさは筋肉に宿る🔥\n\n{hashtags}\n\n💪 {patreon}",
+    "🔥 {category} 🔥\n\n{hashtags}",
+    "{category}✨\nNo words needed♡\n\n{hashtags}",
+    "💪 POWER × BEAUTY 💪\n{category}\n\n{hashtags}",
+    "♡ {category} ♡\n美しさは筋肉に宿る🔥\n\n{hashtags}",
+]
+
+# リプライ用テンプレート（Patreonリンク付き）
+REPLY_TEMPLATES = [
+    "💪 もっと見たい？フルver.はこちら♡\n{patreon}",
+    "🔥 限定コンテンツはここだけ♡\n{patreon}",
+    "✨ 全部見せちゃうよ？♡\n{patreon}",
+    "💪 ノーカット版はこちら🔥\n{patreon}",
+    "♡ もっともっと見たい人はこちら✨\n{patreon}",
 ]
 
 
@@ -203,7 +212,6 @@ def build_tweet_text(video_path, tags):
     tweet = template.format(
         category=category,
         hashtags=hashtags,
-        patreon=PATREON_LINK,
     )
     # 最終防御: ツイート全体からもNGワードを除去
     tweet = sanitize_text(tweet)
@@ -337,8 +345,30 @@ def post_tweet(auth, text, media_id, possibly_sensitive=False):
     )
     resp.raise_for_status()
     result = resp.json()
-    print(f"Tweet posted! id={result['data']['id']}")
+    tweet_id = result['data']['id']
+    print(f"Tweet posted! id={tweet_id}")
     return result
+
+
+def post_reply(auth, tweet_id):
+    """元ツイートにリプライでPatreonリンクを投稿"""
+    reply_text = random.choice(REPLY_TEMPLATES).format(patreon=PATREON_LINK)
+    reply_text = sanitize_text(reply_text)
+    payload = {
+        "text": reply_text,
+        "reply": {
+            "in_reply_to_tweet_id": tweet_id,
+        },
+    }
+    resp = requests.post(
+        TWEET_URL,
+        json=payload,
+        auth=auth,
+    )
+    resp.raise_for_status()
+    reply_id = resp.json()['data']['id']
+    print(f"Reply posted! id={reply_id} (Patreon link)")
+    return reply_id
 
 
 def main():
@@ -401,6 +431,14 @@ def main():
         # ツイート投稿
         print("Posting tweet...")
         result = post_tweet(auth, tweet_text, media_id, possibly_sensitive=sensitive)
+
+        # リプライでPatreonリンクを投稿
+        tweet_id = result['data']['id']
+        print("Posting Patreon link as reply...")
+        try:
+            post_reply(auth, tweet_id)
+        except Exception as e:
+            print(f"Reply failed (non-critical): {e}")
 
         # 成功 → ログ保存
         uploaded_log.append(fname)
