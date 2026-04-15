@@ -32,7 +32,6 @@ def get_gdrive_folder_id():
     else:
         print(f"通常モード: デフォルトフォルダを使用 (JST {now_jst.strftime('%A %H:%M')})")
         return GDRIVE_FOLDER_ID_DEFAULT
-PATREON_LINK = "https://www.patreon.com/cw/MuscleLove"
 VIDEO_EXTENSIONS = {'.mp4', '.mov'}
 MAX_FILE_SIZE = 512 * 1024 * 1024
 MAX_DURATION_SEC = 140
@@ -55,61 +54,45 @@ CONTENT_TAG_MAP = {
     'squat': ['スクワット', 'squat', 'legs', 'legday'],
     'deadlift': ['デッドリフト', 'deadlift', 'powerlifting'],
     'bench': ['ベンチプレス', 'benchpress', 'chest'],
-    'bikini': ['ビキニ', 'bikini', 'bikinifitness', 'figurecompetitor'],
     'competition': ['大会', 'competition', 'bodybuilding', 'contest'],
-    'nsfw': ['nsfw', 'sexy', 'hotfit'],
-    'sexy': ['nsfw', 'sexy', 'hotfit'],
-    'adult': ['nsfw', 'adult', 'hotfit'],
 }
 
 BASE_TAGS = [
     'musclegirl', 'muscularwoman', 'femalemuscle', 'strongwomen',
     'fbb', 'fitnessmotivation', 'gymgirl', '筋肉女子', '筋トレ女子', 'fitfam',
-    'ワキフェチ', '腕フェチ', 'armpit', '筋肉美', 'musclebeauty', 'AIイラスト', 'AI美女',
+    '筋肉美', 'musclebeauty', 'AIイラスト', 'workoutmotivation', 'calisthenics',
 ]
-
-# NSFWを判定するキーワード
-NSFW_KEYWORDS = {'nsfw', 'sexy', 'adult', 'nude', 'bikini', 'erotic', 'hot', 'エロ'}
 
 # 絶対にツイートに出してはいけないNGワード（個人名等）
 NG_WORDS = {'アツロウ', 'あつろう', 'atsuro', 'atsurou', 'アツロー'}
 
-# ツイート本文テンプレート（ランダム選択）
+# ツイート本文テンプレート（ランダム選択・筋肉/懸垂賛美系のみ）
 TWEET_TEMPLATES = [
-    # 煽りモード (4)
-    "凛花の{category}…チラ見せだけで我慢できる？🔥\n全部見たいなら覚悟して♡\n\n{hashtags}",
-    "この{category}、匂わせじゃないよ？ガチだよ？✨\n…続き、気にならないフリしてない？笑\n\n{hashtags}",
-    "ねぇ、この{category}スルーできるの？💪\n紫苑の本気、まだ序章なんだけど♡\n\n{hashtags}",
-    "まだ見てないの？この{category}🔥\n知らないままでいいの？♡\n\n{hashtags}",
-    # トレンド意識モード (4)
-    "Today's vibe: {category}💪\nこの仕上がり、literally insane🔥\n\n{hashtags}",
-    "{category} hits different today✨\nバズる前に見とけ💪\n\n{hashtags}",
-    "POV: カイの{category}に目が離せない🔥\nNo cap, this is peak muscle♡\n\n{hashtags}",
-    "Real ones know💪 {category}ガチ勢だけ来い\nThe grind never stops✨\n\n{hashtags}",
-    # カジュアルモード (4)
-    "いやこの{category}どうなってんのｗｗ💪\nびっくりしたわ( ´∀｀ )\n\n{hashtags}",
-    "ましろの{category}やばすぎて二度見したｗｗ🔥\nこれマジ？ってなるやつ( ´∀｀ )\n\n{hashtags}",
-    "今日の{category}えっぐｗｗｗ💪\n個人的に過去イチかもしれん( ´∀｀ )\n\n{hashtags}",
-    "アヤネの{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごいわ( ´∀｀ )✨\n\n{hashtags}",
-    # ストレート欲望モード (4)
-    "紫苑の{category}、汗ばんだ肌がたまらない🔥\n全部晒してあげる♡\n\n{hashtags}",
-    "この{category}に触れたくなるでしょ？✨\n凛花の鍛え抜いた身体、独り占めして♡\n\n{hashtags}",
-    "ましろの{category}、無防備すぎて罪深い💪\n隅々まで堪能して♡\n\n{hashtags}",
-    "限界まで追い込んだ{category}の肉体美🔥\nカイの全てを受け止めて♡\n\n{hashtags}",
-    # ビジュアル重視モード (4)
-    "🔥 {category} 🔥\n\n{hashtags}",
-    "{category}✨\nNo words needed♡\n\n{hashtags}",
-    "💪 POWER × BEAUTY 💪\n{category}\n\n{hashtags}",
-    "♡ {category} ♡\n美しさは筋肉に宿る🔥\n\n{hashtags}",
-]
-
-# リプライ用テンプレート（Patreonリンク付き）
-REPLY_TEMPLATES = [
-    "💪 もっと見たい？フルver.はこちら♡\n{patreon}",
-    "🔥 限定コンテンツはここだけ♡\n{patreon}",
-    "✨ 全部見せちゃうよ？♡\n{patreon}",
-    "💪 ノーカット版はこちら🔥\n{patreon}",
-    "♡ もっともっと見たい人はこちら✨\n{patreon}",
+    # 努力・筋肉美賛美
+    "この{category}、鍛え上げた証🔥\n努力は裏切らない💪\n\n{hashtags}",
+    "仕上がった{category}💪\nこの肉体美、もはや芸術🔥\n\n{hashtags}",
+    "{category}の美しさ、鍛えた人にしか出せない✨\n継続の結晶💪\n\n{hashtags}",
+    "積み上げてきた{category}🔥\n一日にしてならず💪\n\n{hashtags}",
+    # 懸垂・トレーニング特化
+    "懸垂で作った{category}💪\n背中は嘘をつかない🔥\n\n{hashtags}",
+    "この{category}、何年積み上げたらこうなるんだ💪\n尊敬しかない🔥\n\n{hashtags}",
+    "トレーニングの成果→{category}🔥\nやればここまでいける💪\n\n{hashtags}",
+    "自重トレ勢に見てほしい{category}💪\n器具なしでここまで行ける🔥\n\n{hashtags}",
+    # トレンド英語モード
+    "Today's grind: {category}💪\nConsistency pays off🔥\n\n{hashtags}",
+    "{category} hits different💪\nHard work looks like this🔥\n\n{hashtags}",
+    "POV: peak {category} energy🔥\nNo shortcuts, just reps💪\n\n{hashtags}",
+    "Real ones know💪 {category}の世界\nThe grind never stops🔥\n\n{hashtags}",
+    # カジュアル驚き
+    "この{category}やばすぎて二度見したｗ💪\nどうやって鍛えたらこうなるの🔥\n\n{hashtags}",
+    "{category}の完成度えぐいｗｗｗ💪\n筋トレ勢みんな集合🔥\n\n{hashtags}",
+    "今日の{category}過去イチかもしれん💪\nモチベ爆上がり🔥\n\n{hashtags}",
+    "この{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごい💪\n\n{hashtags}",
+    # ビジュアル重視
+    "💪 {category} 💪\n\n{hashtags}",
+    "🔥 POWER × BEAUTY 🔥\n{category}\n\n{hashtags}",
+    "{category}✨\nStrong is beautiful💪\n\n{hashtags}",
+    "💪 {category}\n継続は力なり🔥\n\n{hashtags}",
 ]
 
 
@@ -161,12 +144,6 @@ def download_videos():
                 if size <= MAX_FILE_SIZE:
                     files.append(fpath)
     return files
-
-
-def is_nsfw(video_path):
-    """ファイルパスからNSFWかどうかを判定"""
-    path_lower = video_path.lower().replace('\\', '/').replace('-', ' ').replace('_', ' ')
-    return any(kw in path_lower for kw in NSFW_KEYWORDS)
 
 
 def generate_tags(video_path):
@@ -327,7 +304,7 @@ def upload_video(auth, file_path):
     return media_id
 
 
-def post_tweet(auth, text, media_id, possibly_sensitive=False):
+def post_tweet(auth, text, media_id):
     """ツイートを投稿"""
     payload = {
         "text": text,
@@ -335,9 +312,6 @@ def post_tweet(auth, text, media_id, possibly_sensitive=False):
             "media_ids": [media_id],
         },
     }
-    if possibly_sensitive:
-        payload["possibly_sensitive"] = True
-
     resp = requests.post(
         TWEET_URL,
         json=payload,
@@ -348,27 +322,6 @@ def post_tweet(auth, text, media_id, possibly_sensitive=False):
     tweet_id = result['data']['id']
     print(f"Tweet posted! id={tweet_id}")
     return result
-
-
-def post_reply(auth, tweet_id):
-    """元ツイートにリプライでPatreonリンクを投稿"""
-    reply_text = random.choice(REPLY_TEMPLATES).format(patreon=PATREON_LINK)
-    reply_text = sanitize_text(reply_text)
-    payload = {
-        "text": reply_text,
-        "reply": {
-            "in_reply_to_tweet_id": tweet_id,
-        },
-    }
-    resp = requests.post(
-        TWEET_URL,
-        json=payload,
-        auth=auth,
-    )
-    resp.raise_for_status()
-    reply_id = resp.json()['data']['id']
-    print(f"Reply posted! id={reply_id} (Patreon link)")
-    return reply_id
 
 
 def main():
@@ -415,9 +368,7 @@ def main():
                 seen.add(t.lower())
 
     tweet_text = build_tweet_text(video, tags)
-    sensitive = is_nsfw(video)
     print(f"Tags: {', '.join(tags[:10])}...")
-    print(f"NSFW: {sensitive}")
     print(f"Tweet:\n{tweet_text}\n")
 
     # 動画アップロード
@@ -430,15 +381,7 @@ def main():
 
         # ツイート投稿
         print("Posting tweet...")
-        result = post_tweet(auth, tweet_text, media_id, possibly_sensitive=sensitive)
-
-        # リプライでPatreonリンクを投稿
-        tweet_id = result['data']['id']
-        print("Posting Patreon link as reply...")
-        try:
-            post_reply(auth, tweet_id)
-        except Exception as e:
-            print(f"Reply failed (non-critical): {e}")
+        post_tweet(auth, tweet_text, media_id)
 
         # 成功 → ログ保存
         uploaded_log.append(fname)

@@ -1,9 +1,10 @@
 name: X Auto Upload
 
 on:
-  schedule:
-    # 毎日 JST 12:00 (UTC 3:00)
-    - cron: '0 3 * * *'
+  # 自動投稿停止中(2026-04-16〜): 旧アカ凍結のためcronコメントアウト。復活時は下記を戻す
+  # schedule:
+  #   # 毎日 JST 12:00 (UTC 3:00)
+  #   - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:
