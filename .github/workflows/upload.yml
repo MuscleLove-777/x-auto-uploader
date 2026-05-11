@@ -1,11 +1,19 @@
 name: X Auto Upload
 
 on:
-  # 自動投稿停止中(2026-04-16〜): 旧アカ凍結のためcronコメントアウト。復活時は下記を戻す
-  # schedule:
-  #   # 毎日 JST 12:00 (UTC 3:00)
-  #   - cron: '0 3 * * *'
+  schedule:
+    # 毎日 JST 12:00 (UTC 3:00)。復旧直後なので低頻度で再開。
+    - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Post without publishing?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
@@ -42,6 +50,7 @@ jobs:
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
           GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python upload.py
 
       - name: Wait before retry 2
@@ -59,6 +68,7 @@ jobs:
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
           GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python upload.py
 
       - name: Wait before retry 3
@@ -75,6 +85,7 @@ jobs:
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
           GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
           GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python upload.py
 
       - name: LINE notify on failure

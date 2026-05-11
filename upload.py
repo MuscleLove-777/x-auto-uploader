@@ -38,6 +38,7 @@ MAX_DURATION_SEC = 140
 UPLOADED_LOG = "uploaded.json"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 TWEET_URL = "https://api.x.com/2/tweets"
+MAX_TWEET_CHARS = 280
 
 # --- タグマッピング ---
 CONTENT_TAG_MAP = {
@@ -65,6 +66,10 @@ BASE_TAGS = [
 
 # 絶対にツイートに出してはいけないNGワード（個人名等）
 NG_WORDS = {'アツロウ', 'あつろう', 'atsuro', 'atsurou', 'アツロー'}
+HASHLIKE_RE = re.compile(r"^[a-f0-9]{6,}$", re.IGNORECASE)
+UNSAFE_TAG_WORDS = {
+    'nsfw', 'adult', 'sexy', 'nude', 'porn', 'erotic', 'エロ', 'アダルト',
+}
 
 # ツイート本文テンプレート（ランダム選択・筋肉/懸垂賛美系のみ）
 TWEET_TEMPLATES = [
@@ -104,6 +109,11 @@ def get_oauth():
         os.environ.get("X_ACCESS_TOKEN", ""),
         os.environ.get("X_ACCESS_TOKEN_SECRET", ""),
     )
+
+
+def is_dry_run():
+    """本番投稿せず、選定・本文生成・認証チェックまでで止める。"""
+    return os.environ.get("X_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
 
 
 def load_uploaded_log():
@@ -166,6 +176,36 @@ def generate_tags(video_path):
     return unique_tags
 
 
+def is_safe_tag(tag):
+    """X向けに弱い/危ないタグを落とす。"""
+    tag_lower = tag.lower().strip("#")
+    if not tag_lower:
+        return False
+    if HASHLIKE_RE.match(tag_lower):
+        return False
+    if any(word in tag_lower for word in UNSAFE_TAG_WORDS):
+        return False
+    return True
+
+
+def filter_tags(tags, max_tags=12):
+    """重複・危険語・長すぎるタグを除去して上限数に丸める。"""
+    seen = set()
+    safe = []
+    for tag in tags:
+        cleaned = re.sub(r"\s+", "", str(tag)).strip("#")
+        if not is_safe_tag(cleaned):
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        safe.append(cleaned)
+        if len(safe) >= max_tags:
+            break
+    return safe
+
+
 def sanitize_text(text):
     """NGワードが含まれていたら除去する"""
     sanitized = text
@@ -184,7 +224,7 @@ def build_tweet_text(video_path, tags):
             break
     # categoryからNGワードを除去
     category = sanitize_text(category).strip() or "Muscle"
-    hashtags = ' '.join([f'#{t}' for t in tags[:15]])
+    hashtags = ' '.join([f'#{t}' for t in filter_tags(tags)])
     template = random.choice(TWEET_TEMPLATES)
     tweet = template.format(
         category=category,
@@ -192,6 +232,15 @@ def build_tweet_text(video_path, tags):
     )
     # 最終防御: ツイート全体からもNGワードを除去
     tweet = sanitize_text(tweet)
+    if len(tweet) > MAX_TWEET_CHARS:
+        body = tweet.split("\n\n", 1)[0]
+        trimmed_tags = []
+        for tag in hashtags.split():
+            candidate = body + "\n\n" + " ".join(trimmed_tags + [tag])
+            if len(candidate) > MAX_TWEET_CHARS:
+                break
+            trimmed_tags.append(tag)
+        tweet = body + ("\n\n" + " ".join(trimmed_tags) if trimmed_tags else "")
     return tweet
 
 
@@ -326,6 +375,7 @@ def post_tweet(auth, text, media_id):
 
 def main():
     auth = get_oauth()
+    dry_run = is_dry_run()
 
     # 認証チェック
     consumer_key = os.environ.get("X_CONSUMER_KEY", "")
@@ -335,6 +385,8 @@ def main():
         return 1
 
     print("Auth credentials loaded.")
+    if dry_run:
+        print("DRY RUN: media upload and tweet publishing will be skipped.")
 
     # Google Driveからダウンロード
     videos = download_videos()
@@ -369,7 +421,12 @@ def main():
 
     tweet_text = build_tweet_text(video, tags)
     print(f"Tags: {', '.join(tags[:10])}...")
+    print(f"Tweet length: {len(tweet_text)} / {MAX_TWEET_CHARS}")
     print(f"Tweet:\n{tweet_text}\n")
+
+    if dry_run:
+        print(f"DRY RUN OK: selected={fname}")
+        return 0
 
     # 動画アップロード
     try:
