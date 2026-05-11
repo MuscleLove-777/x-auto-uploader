@@ -128,6 +128,25 @@ def save_uploaded_log(log):
         json.dump(log, f, indent=2)
 
 
+def collect_video_files(dl_dir):
+    """ダウンロード済み動画からX向けに安全な候補だけ集める。"""
+    files = []
+    for root, dirs, filenames in os.walk(dl_dir):
+        for fname in filenames:
+            fpath = os.path.join(root, fname)
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in VIDEO_EXTENSIONS:
+                continue
+            path_lower = fpath.lower()
+            if any(word in path_lower for word in UNSAFE_TAG_WORDS):
+                print(f"Skipping unsafe filename for X restart: {fname}")
+                continue
+            size = os.path.getsize(fpath)
+            if size <= MAX_FILE_SIZE:
+                files.append(fpath)
+    return files
+
+
 def download_videos():
     """Google Driveからダウンロード"""
     import gdown
@@ -149,18 +168,13 @@ def download_videos():
             gdown.download_folder(url, output=dl_dir, quiet=False)
     except Exception as e:
         print(f"Download error: {e}")
+        partial_files = collect_video_files(dl_dir)
+        if partial_files:
+            print(f"Continuing with {len(partial_files)} partially downloaded safe videos")
+            return partial_files
         return None
 
-    files = []
-    for root, dirs, filenames in os.walk(dl_dir):
-        for fname in filenames:
-            fpath = os.path.join(root, fname)
-            ext = os.path.splitext(fname)[1].lower()
-            if ext in VIDEO_EXTENSIONS:
-                size = os.path.getsize(fpath)
-                if size <= MAX_FILE_SIZE:
-                    files.append(fpath)
-    return files
+    return collect_video_files(dl_dir)
 
 
 def generate_tags(video_path):
