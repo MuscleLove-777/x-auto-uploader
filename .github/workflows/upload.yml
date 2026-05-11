@@ -88,8 +88,16 @@ jobs:
           X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         run: python upload.py
 
+      - name: Upload uploaded log
+        if: ${{ (steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uploaded-log
+          path: uploaded.json
+          if-no-files-found: ignore
+
       - name: LINE notify on failure
-        if: steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped')
+        if: ${{ steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
@@ -106,7 +114,7 @@ jobs:
             }"
 
       - name: LINE notify on success
-        if: steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success'
+        if: ${{ (steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}

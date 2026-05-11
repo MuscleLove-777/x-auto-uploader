@@ -140,9 +140,16 @@ def download_videos():
     url = f"https://drive.google.com/drive/folders/{folder_id}"
     print(f"Downloading from Google Drive: {url}")
     try:
-        gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
+        try:
+            gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
+        except TypeError as e:
+            if "remaining_ok" not in str(e):
+                raise
+            print("gdown does not support remaining_ok; retrying without it")
+            gdown.download_folder(url, output=dl_dir, quiet=False)
     except Exception as e:
         print(f"Download error: {e}")
+        return None
 
     files = []
     for root, dirs, filenames in os.walk(dl_dir):
@@ -390,6 +397,9 @@ def main():
 
     # Google Driveからダウンロード
     videos = download_videos()
+    if videos is None:
+        print("Video download failed!")
+        return 1
     if not videos:
         print("No videos found!")
         return 0
