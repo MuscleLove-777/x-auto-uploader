@@ -70,6 +70,9 @@ HASHLIKE_RE = re.compile(r"^[a-f0-9]{6,}$", re.IGNORECASE)
 UNSAFE_TAG_WORDS = {
     'nsfw', 'adult', 'sexy', 'nude', 'porn', 'erotic', 'エロ', 'アダルト',
 }
+OFF_TOPIC_CATEGORY_WORDS = {
+    'golf', 'ゴルフ', 'grok', 'video', 'imagine', 'default', 'download', 'downloads',
+}
 
 # ツイート本文テンプレート（ランダム選択・筋肉/懸垂賛美系のみ）
 TWEET_TEMPLATES = [
@@ -235,16 +238,35 @@ def sanitize_text(text):
     return sanitized
 
 
+def is_safe_category(category):
+    """ファイル/フォルダ由来のカテゴリが投稿本文向きか判定する。"""
+    value = sanitize_text(str(category)).strip()
+    if not value:
+        return False
+    lower = value.lower()
+    if HASHLIKE_RE.match(lower):
+        return False
+    if any(word in lower for word in UNSAFE_TAG_WORDS):
+        return False
+    if any(word in lower for word in OFF_TOPIC_CATEGORY_WORDS):
+        return False
+    if re.search(r"[0-9a-f]{8}-[0-9a-f-]{10,}", lower):
+        return False
+    return True
+
+
 def build_tweet_text(video_path, tags):
     """ツイート本文を生成"""
     parts = video_path.replace('\\', '/').split('/')
     category = "Muscle"
     for p in parts:
-        if p not in ['videos', ''] and '.' not in p:
+        if p not in ['videos', ''] and '.' not in p and is_safe_category(p):
             category = p
             break
     # categoryからNGワードを除去
-    category = sanitize_text(category).strip() or "Muscle"
+    category = sanitize_text(category).strip() or "筋肉女子"
+    if not is_safe_category(category):
+        category = "筋肉女子"
     hashtags = ' '.join([f'#{t}' for t in filter_tags(tags)])
     template = random.choice(TWEET_TEMPLATES)
     tweet = template.format(
