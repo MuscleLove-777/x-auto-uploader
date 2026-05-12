@@ -24,6 +24,11 @@ RELEVANCE_KEYWORDS = {
     '筋トレ', '筋肉', 'フィットネス', 'ジム', 'トレーニング',
 }
 
+WEAK_TREND_KEYWORDS = {
+    'quote', 'quotes', 'saying', 'sayings', 'mother', 'mothersday',
+    'mom', 'movie', 'film', 'book', 'song', 'lyrics',
+}
+
 
 def get_trending_tags(max_tags=5):
     """
@@ -95,4 +100,6 @@ def get_trending_tags(max_tags=5):
 def _is_relevant(query):
     """クエリが自分のニッチに関連あるかチェック"""
     query_lower = query.lower()
+    if any(kw in query_lower.replace(' ', '') for kw in WEAK_TREND_KEYWORDS):
+        return False
     return any(kw in query_lower for kw in RELEVANCE_KEYWORDS)
