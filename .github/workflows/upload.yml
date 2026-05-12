@@ -33,7 +33,18 @@ jobs:
       - name: Install dependencies
         run: pip install requests requests-oauthlib gdown pytrends
 
+      - name: Check X media auth
+        id: auth_check
+        continue-on-error: true
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: python upload.py --check-auth-only
+
       - name: Download uploaded log
+        if: steps.auth_check.outcome == 'success'
         continue-on-error: true
         run: |
           gh run download --name uploaded-log --dir . 2>/dev/null || echo "No previous log found"
@@ -42,6 +53,7 @@ jobs:
 
       - name: Run upload (attempt 1)
         id: attempt1
+        if: steps.auth_check.outcome == 'success'
         continue-on-error: true
         env:
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
@@ -54,12 +66,12 @@ jobs:
         run: python upload.py
 
       - name: Wait before retry 2
-        if: steps.attempt1.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure'
         run: echo "Attempt 1 failed. Waiting 60s..." && sleep 60
 
       - name: Run upload (attempt 2)
         id: attempt2
-        if: steps.attempt1.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure'
         continue-on-error: true
         env:
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
@@ -72,12 +84,12 @@ jobs:
         run: python upload.py
 
       - name: Wait before retry 3
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
         run: echo "Attempt 2 failed. Waiting 120s..." && sleep 120
 
       - name: Run upload (attempt 3)
         id: attempt3
-        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        if: steps.auth_check.outcome == 'success' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
         env:
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
           X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
@@ -97,11 +109,16 @@ jobs:
           if-no-files-found: ignore
 
       - name: LINE notify on failure
-        if: ${{ steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
+        if: ${{ (steps.auth_check.outcome == 'failure' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped'))) && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
+          if [ "${{ steps.auth_check.outcome }}" = "failure" ]; then
+            FAILURE_TEXT="⚠️ X API認証に失敗しました。Access Token/Secret を Read and Write 権限で再生成して GitHub Secrets を更新してください"
+          else
+            FAILURE_TEXT="⚠️ X(Twitter)自動投稿が3回リトライしても失敗しました"
+          fi
           curl -s -X POST https://api.line.me/v2/bot/message/push \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
@@ -109,7 +126,7 @@ jobs:
               \"to\": \"${LINE_USER_ID}\",
               \"messages\": [{
                 \"type\": \"text\",
-                \"text\": \"⚠️ X(Twitter)自動投稿が3回リトライしても失敗しました\\n\\n時刻: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\\nログ: https://github.com/MuscleLove-777/x-auto-uploader/actions/runs/${{ github.run_id }}\"
+                \"text\": \"${FAILURE_TEXT}\\n\\n時刻: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\\nログ: https://github.com/MuscleLove-777/x-auto-uploader/actions/runs/${{ github.run_id }}\"
               }]
             }"
 

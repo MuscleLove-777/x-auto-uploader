@@ -39,6 +39,7 @@ UPLOADED_LOG = "uploaded.json"
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 TWEET_URL = "https://api.x.com/2/tweets"
 MAX_TWEET_CHARS = 280
+AUTH_ERROR_EXIT_CODE = 20
 
 # --- タグマッピング ---
 CONTENT_TAG_MAP = {
@@ -117,6 +118,41 @@ def get_oauth():
 def is_dry_run():
     """本番投稿せず、選定・本文生成・認証チェックまでで止める。"""
     return os.environ.get("X_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
+
+
+def is_auth_error_response(response):
+    """X APIの認証・権限エラーを検出する。"""
+    if response is None:
+        return False
+    if response.status_code in {401, 403}:
+        return True
+    text = response.text or ""
+    return any(marker in text for marker in (
+        "Could not authenticate you",
+        "Invalid or expired token",
+        "Read-only application cannot POST",
+    ))
+
+
+def verify_media_auth(auth):
+    """投稿前にmedia/upload権限を確認する。ツイートは作成しない。"""
+    resp = requests.post(
+        MEDIA_UPLOAD_URL,
+        data={
+            "command": "INIT",
+            "total_bytes": 1,
+            "media_type": "video/mp4",
+            "media_category": "tweet_video",
+        },
+        auth=auth,
+    )
+    if resp.status_code >= 400:
+        print("X media auth check failed.")
+        print(f"Status: {resp.status_code}")
+        print(f"Response: {resp.text}")
+        return False
+    print("X media auth check OK.")
+    return True
 
 
 def load_uploaded_log():
@@ -428,6 +464,9 @@ def main():
         return 1
 
     print("Auth credentials loaded.")
+    if "--check-auth-only" in sys.argv:
+        return 0 if verify_media_auth(auth) else AUTH_ERROR_EXIT_CODE
+
     if dry_run:
         print("DRY RUN: media upload and tweet publishing will be skipped.")
 
@@ -497,6 +536,9 @@ def main():
         if e.response is not None:
             print(f"Status: {e.response.status_code}")
             print(f"Response: {e.response.text}")
+            if is_auth_error_response(e.response):
+                print("X API credentials are invalid, expired, or missing write/media permission.")
+                return AUTH_ERROR_EXIT_CODE
         else:
             print("Response: N/A")
         return 1
