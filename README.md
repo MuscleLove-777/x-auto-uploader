@@ -75,3 +75,15 @@ Google Drive フォルダ/
 - 動画は最大140秒・512MB
 - MP4/MOV形式のみ
 - 読み取りAPI（タイムライン取得等）はほぼ使用不可
+
+## Additional options (2026-05)
+
+- `X_SCHEDULE_GUARD` (`true`/`false`, default: `true`)
+  - Restrict live posting to configured JST windows.
+- `X_POST_HOURS_JST` (default: `0,6,12,18`)
+  - Comma-separated allowed JST hours. `24` is treated as `0`.
+- `X_POST_WINDOW_MINUTES` (default: `20`)
+  - Minutes after each allowed hour that posting is still permitted.
+
+Failures are appended to `failure_log.jsonl` with `timestamp_jst/stage/message`.
+Use `X_DRY_RUN=true` to bypass schedule guard for safe verification.

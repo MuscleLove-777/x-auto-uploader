@@ -1,6 +1,23 @@
 videos/
 uploaded.json
+x_account_insights.json
+failure_log.jsonl
 x_credentials.json
 __pycache__/
 *.pyc
 .env
+
+
+# auto-defense (weekly sweep)
+.env
+.env.*
+!.env.example
+credentials*.json
+token*.json
+client_secret*.json
+service_account*.json
+*.pem
+*.key
+*.cookie
+*_cookies.json
+cookies.txt

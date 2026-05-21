@@ -1,112 +1,115 @@
 # -*- coding: utf-8 -*-
+"""Post one Google Drive video to X.
+
+The workflow is intentionally conservative:
+- one live post per scheduled run
+- fail visibly when X credentials are stale
+- skip unsafe filenames/tags
+- use optional account insights generated from recent X posts
 """
-X (Twitter) 動画ランダムアップロード（GitHub Actions用）
-Google Driveからダウンロード → ランダム1本アップロード → アップロード済みを記録
-Free Tier対応: 月500ツイート / 動画最大140秒・512MB
-"""
-import sys
+
 import json
 import os
 import random
 import re
+import sys
 import time
-import hashlib
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
 import requests
 from requests_oauthlib import OAuth1
 
 JST = timezone(timedelta(hours=9))
 
-# 金曜21時JST → 専用フォルダ、それ以外 → デフォルトフォルダ
-GDRIVE_FOLDER_ID_FRIDAY = os.environ.get("GDRIVE_FOLDER_ID_FRIDAY", "")
-GDRIVE_FOLDER_ID_DEFAULT = os.environ.get("GDRIVE_FOLDER_ID_DEFAULT", "")
-
-
-def get_gdrive_folder_id():
-    """現在時刻（JST）に応じてGoogle DriveフォルダIDを選択"""
-    now_jst = datetime.now(JST)
-    is_friday_21 = (now_jst.weekday() == 4 and now_jst.hour == 21)
-    if is_friday_21 and GDRIVE_FOLDER_ID_FRIDAY:
-        print(f"金曜21時モード: Friday専用フォルダを使用")
-        return GDRIVE_FOLDER_ID_FRIDAY
-    else:
-        print(f"通常モード: デフォルトフォルダを使用 (JST {now_jst.strftime('%A %H:%M')})")
-        return GDRIVE_FOLDER_ID_DEFAULT
-VIDEO_EXTENSIONS = {'.mp4', '.mov'}
+VIDEO_EXTENSIONS = {".mp4", ".mov"}
 MAX_FILE_SIZE = 512 * 1024 * 1024
-MAX_DURATION_SEC = 140
 UPLOADED_LOG = "uploaded.json"
+INSIGHTS_FILE = "x_account_insights.json"
+FAILURE_LOG = "failure_log.jsonl"
+
 MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json"
 TWEET_URL = "https://api.x.com/2/tweets"
 MAX_TWEET_CHARS = 280
 AUTH_ERROR_EXIT_CODE = 20
 
-# --- タグマッピング ---
+DEFAULT_POST_HOURS_JST = "12"
+DEFAULT_POST_WINDOW_MINUTES = 30
+
 CONTENT_TAG_MAP = {
-    'training': ['筋トレ', 'workout', 'training', 'gym', 'fitness'],
-    'workout': ['筋トレ', 'workout', 'training', 'gym', 'fitness'],
-    'pullups': ['懸垂', 'pullups', 'backworkout', 'calisthenics'],
-    'posing': ['ポージング', 'posing', 'bodybuilding', 'physique'],
-    'flex': ['フレックス', 'flex', 'muscle', 'bodybuilding'],
-    'muscle': ['筋肉', 'muscle', 'muscular', 'fitness'],
-    'bicep': ['上腕二頭筋', 'biceps', 'arms', 'muscle'],
-    'abs': ['腹筋', 'abs', 'sixpack', 'core'],
-    'leg': ['脚トレ', 'legs', 'quads', 'legday'],
-    'back': ['背中', 'back', 'lats', 'backday'],
-    'squat': ['スクワット', 'squat', 'legs', 'legday'],
-    'deadlift': ['デッドリフト', 'deadlift', 'powerlifting'],
-    'bench': ['ベンチプレス', 'benchpress', 'chest'],
-    'competition': ['大会', 'competition', 'bodybuilding', 'contest'],
+    "training": ["workout", "training", "gym", "fitness"],
+    "workout": ["workout", "training", "gym", "fitness"],
+    "pullups": ["pullups", "backworkout", "calisthenics"],
+    "posing": ["posing", "bodybuilding", "physique"],
+    "flex": ["flex", "muscle", "bodybuilding"],
+    "muscle": ["muscle", "muscular", "fitness"],
+    "bicep": ["biceps", "arms", "muscle"],
+    "abs": ["abs", "sixpack", "core"],
+    "leg": ["legs", "quads", "legday"],
+    "back": ["back", "lats", "backday"],
+    "squat": ["squat", "legs", "legday"],
+    "deadlift": ["deadlift", "powerlifting"],
+    "bench": ["benchpress", "chest"],
+    "competition": ["competition", "bodybuilding", "contest"],
 }
 
 BASE_TAGS = [
-    'musclegirl', 'muscularwoman', 'femalemuscle', 'strongwomen',
-    'fbb', 'fitnessmotivation', 'gymgirl', '筋肉女子', '筋トレ女子', 'fitfam',
-    '筋肉美', 'musclebeauty', 'AIイラスト', 'workoutmotivation', 'calisthenics',
+    "musclegirl",
+    "muscularwoman",
+    "femalemuscle",
+    "strongwomen",
+    "fbb",
+    "fitnessmotivation",
+    "gymgirl",
+    "musclebeauty",
+    "workoutmotivation",
+    "calisthenics",
 ]
 
-# 絶対にツイートに出してはいけないNGワード（個人名等）
-NG_WORDS = {'アツロウ', 'あつろう', 'atsuro', 'atsurou', 'アツロー'}
-HASHLIKE_RE = re.compile(r"^[a-f0-9]{6,}$", re.IGNORECASE)
 UNSAFE_TAG_WORDS = {
-    'nsfw', 'adult', 'sexy', 'nude', 'porn', 'erotic', 'エロ', 'アダルト',
+    "nsfw",
+    "adult",
+    "sexy",
+    "nude",
+    "porn",
+    "erotic",
 }
 OFF_TOPIC_CATEGORY_WORDS = {
-    'golf', 'ゴルフ', 'grok', 'video', 'imagine', 'default', 'download', 'downloads',
+    "golf",
+    "grok",
+    "video",
+    "imagine",
+    "default",
+    "download",
+    "downloads",
 }
+NG_WORDS = {"atsuro", "atsurou"}
+HASHLIKE_RE = re.compile(r"^[a-f0-9]{6,}$", re.IGNORECASE)
 
-# ツイート本文テンプレート（ランダム選択・筋肉/懸垂賛美系のみ）
 TWEET_TEMPLATES = [
-    # 努力・筋肉美賛美
-    "この{category}、鍛え上げた証🔥\n努力は裏切らない💪\n\n{hashtags}",
-    "仕上がった{category}💪\nこの肉体美、もはや芸術🔥\n\n{hashtags}",
-    "{category}の美しさ、鍛えた人にしか出せない✨\n継続の結晶💪\n\n{hashtags}",
-    "積み上げてきた{category}🔥\n一日にしてならず💪\n\n{hashtags}",
-    # 懸垂・トレーニング特化
-    "懸垂で作った{category}💪\n背中は嘘をつかない🔥\n\n{hashtags}",
-    "この{category}、何年積み上げたらこうなるんだ💪\n尊敬しかない🔥\n\n{hashtags}",
-    "トレーニングの成果→{category}🔥\nやればここまでいける💪\n\n{hashtags}",
-    "自重トレ勢に見てほしい{category}💪\n器具なしでここまで行ける🔥\n\n{hashtags}",
-    # トレンド英語モード
-    "Today's grind: {category}💪\nConsistency pays off🔥\n\n{hashtags}",
-    "{category} hits different💪\nHard work looks like this🔥\n\n{hashtags}",
-    "POV: peak {category} energy🔥\nNo shortcuts, just reps💪\n\n{hashtags}",
-    "Real ones know💪 {category}の世界\nThe grind never stops🔥\n\n{hashtags}",
-    # カジュアル驚き
-    "この{category}やばすぎて二度見したｗ💪\nどうやって鍛えたらこうなるの🔥\n\n{hashtags}",
-    "{category}の完成度えぐいｗｗｗ💪\n筋トレ勢みんな集合🔥\n\n{hashtags}",
-    "今日の{category}過去イチかもしれん💪\nモチベ爆上がり🔥\n\n{hashtags}",
-    "この{category}見てたら筋トレしたくなってきたｗ🔥\n影響力すごい💪\n\n{hashtags}",
-    # ビジュアル重視
-    "💪 {category} 💪\n\n{hashtags}",
-    "🔥 POWER × BEAUTY 🔥\n{category}\n\n{hashtags}",
-    "{category}✨\nStrong is beautiful💪\n\n{hashtags}",
-    "💪 {category}\n継続は力なり🔥\n\n{hashtags}",
+    "Training note: {category}\nStrong lines, steady work.",
+    "{category}\nNo shortcuts. Just reps and consistency.",
+    "Today's focus: {category}\nSmall progress still counts.",
+    "{category} energy.\nBuilt one session at a time.",
+    "Form, balance, and control.\n{category}",
+    "Strength looks better when it is earned.\n{category}",
+]
+
+CTA_LINES = [
+    "More daily updates on MuscleLove.",
+    "Saving this one for the motivation file.",
+    "One strong post a day. See you tomorrow.",
+    "More training inspiration in the profile flow.",
 ]
 
 
-def get_oauth():
-    """OAuth1認証オブジェクトを取得"""
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
+
+
+def get_oauth() -> OAuth1:
     return OAuth1(
         os.environ.get("X_CONSUMER_KEY", ""),
         os.environ.get("X_CONSUMER_SECRET", ""),
@@ -115,27 +118,79 @@ def get_oauth():
     )
 
 
-def is_dry_run():
-    """本番投稿せず、選定・本文生成・認証チェックまでで止める。"""
-    return os.environ.get("X_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
+def write_failure(stage: str, message: str, **extra: object) -> None:
+    entry = {
+        "timestamp_jst": datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S JST"),
+        "stage": stage,
+        "message": message,
+    }
+    if extra:
+        entry["extra"] = extra
+    try:
+        with open(FAILURE_LOG, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"Failed to write failure log: {exc}")
 
 
-def is_auth_error_response(response):
-    """X APIの認証・権限エラーを検出する。"""
+def parse_schedule_hours(raw_value: str | None) -> list[int]:
+    text = (raw_value or DEFAULT_POST_HOURS_JST).replace(" ", "")
+    hours: list[int] = []
+    for token in text.split(","):
+        if not token:
+            continue
+        try:
+            hour = int(token)
+        except ValueError:
+            continue
+        if hour == 24:
+            hour = 0
+        if 0 <= hour <= 23 and hour not in hours:
+            hours.append(hour)
+    return sorted(hours) or [12]
+
+
+def should_skip_by_schedule(dry_run: bool) -> tuple[bool, str]:
+    if dry_run:
+        return False, "Dry-run mode: schedule guard skipped."
+    if not env_flag("X_SCHEDULE_GUARD", True):
+        return False, "Schedule guard disabled by X_SCHEDULE_GUARD."
+
+    now_jst = datetime.now(JST)
+    hours = parse_schedule_hours(os.environ.get("X_POST_HOURS_JST"))
+    try:
+        window_min = int(os.environ.get("X_POST_WINDOW_MINUTES", str(DEFAULT_POST_WINDOW_MINUTES)))
+    except ValueError:
+        window_min = DEFAULT_POST_WINDOW_MINUTES
+
+    if now_jst.hour not in hours or now_jst.minute > max(0, window_min):
+        return True, (
+            "Schedule guard: skip outside post window "
+            f"(now={now_jst.strftime('%H:%M')} JST, hours={hours}, window_min={window_min})."
+        )
+    return False, (
+        "Schedule guard: within post window "
+        f"(now={now_jst.strftime('%H:%M')} JST, hours={hours}, window_min={window_min})."
+    )
+
+
+def is_auth_error_response(response: requests.Response | None) -> bool:
     if response is None:
         return False
     if response.status_code in {401, 403}:
         return True
     text = response.text or ""
-    return any(marker in text for marker in (
-        "Could not authenticate you",
-        "Invalid or expired token",
-        "Read-only application cannot POST",
-    ))
+    return any(
+        marker in text
+        for marker in (
+            "Could not authenticate you",
+            "Invalid or expired token",
+            "Read-only application cannot POST",
+        )
+    )
 
 
-def verify_media_auth(auth):
-    """投稿前にmedia/upload権限を確認する。ツイートは作成しない。"""
+def verify_media_auth(auth: OAuth1) -> bool:
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={
@@ -145,6 +200,7 @@ def verify_media_auth(auth):
             "media_category": "tweet_video",
         },
         auth=auth,
+        timeout=30,
     )
     if resp.status_code >= 400:
         print("X media auth check failed.")
@@ -155,22 +211,49 @@ def verify_media_auth(auth):
     return True
 
 
-def load_uploaded_log():
-    if os.path.exists(UPLOADED_LOG):
-        with open(UPLOADED_LOG, 'r') as f:
-            return json.load(f)
-    return []
+def load_json_file(path: str, default: object) -> object:
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return default
 
 
-def save_uploaded_log(log):
-    with open(UPLOADED_LOG, 'w') as f:
-        json.dump(log, f, indent=2)
+def save_json_file(path: str, payload: object) -> None:
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
-def collect_video_files(dl_dir):
-    """ダウンロード済み動画からX向けに安全な候補だけ集める。"""
-    files = []
-    for root, dirs, filenames in os.walk(dl_dir):
+def load_uploaded_log() -> list[str]:
+    value = load_json_file(UPLOADED_LOG, [])
+    return value if isinstance(value, list) else []
+
+
+def save_uploaded_log(log: list[str]) -> None:
+    save_json_file(UPLOADED_LOG, log)
+
+
+def load_account_insights() -> dict:
+    value = load_json_file(INSIGHTS_FILE, {})
+    return value if isinstance(value, dict) else {}
+
+
+def get_gdrive_folder_id() -> str:
+    now_jst = datetime.now(JST)
+    friday_folder = os.environ.get("GDRIVE_FOLDER_ID_FRIDAY", "")
+    default_folder = os.environ.get("GDRIVE_FOLDER_ID_DEFAULT", "")
+    if now_jst.weekday() == 4 and now_jst.hour == 21 and friday_folder:
+        print("Using Friday folder.")
+        return friday_folder
+    print(f"Using default folder (JST {now_jst.strftime('%A %H:%M')}).")
+    return default_folder
+
+
+def collect_video_files(dl_dir: str) -> list[str]:
+    files: list[str] = []
+    for root, _dirs, filenames in os.walk(dl_dir):
         for fname in filenames:
             fpath = os.path.join(root, fname)
             ext = os.path.splitext(fname)[1].lower()
@@ -178,66 +261,65 @@ def collect_video_files(dl_dir):
                 continue
             path_lower = fpath.lower()
             if any(word in path_lower for word in UNSAFE_TAG_WORDS):
-                print(f"Skipping unsafe filename for X restart: {fname}")
+                print(f"Skipping unsafe filename: {fname}")
                 continue
-            size = os.path.getsize(fpath)
-            if size <= MAX_FILE_SIZE:
+            if os.path.getsize(fpath) <= MAX_FILE_SIZE:
                 files.append(fpath)
     return files
 
 
-def download_videos():
-    """Google Driveからダウンロード"""
+def download_videos() -> list[str] | None:
     import gdown
+
     dl_dir = "videos"
     os.makedirs(dl_dir, exist_ok=True)
     folder_id = get_gdrive_folder_id()
     if not folder_id:
-        print("Error: GDRIVE_FOLDER_ID not set")
+        print("Error: GDRIVE_FOLDER_ID_DEFAULT is not set.")
         return []
+
     url = f"https://drive.google.com/drive/folders/{folder_id}"
     print(f"Downloading from Google Drive: {url}")
     try:
         try:
             gdown.download_folder(url, output=dl_dir, quiet=False, remaining_ok=True)
-        except TypeError as e:
-            if "remaining_ok" not in str(e):
+        except TypeError as exc:
+            if "remaining_ok" not in str(exc):
                 raise
-            print("gdown does not support remaining_ok; retrying without it")
             gdown.download_folder(url, output=dl_dir, quiet=False)
-    except Exception as e:
-        print(f"Download error: {e}")
+    except Exception as exc:
+        print(f"Download error: {exc}")
         partial_files = collect_video_files(dl_dir)
         if partial_files:
-            print(f"Continuing with {len(partial_files)} partially downloaded safe videos")
+            print(f"Continuing with {len(partial_files)} partially downloaded videos.")
             return partial_files
         return None
 
     return collect_video_files(dl_dir)
 
 
-def generate_tags(video_path):
-    """ファイルパスからハッシュタグを生成"""
+def generate_tags(video_path: str) -> list[str]:
     tags = list(BASE_TAGS)
-    path_lower = video_path.lower().replace('\\', '/').replace('-', ' ').replace('_', ' ')
-    matched = set()
+    path_lower = video_path.lower().replace("\\", "/").replace("-", " ").replace("_", " ")
     for keyword, keyword_tags in CONTENT_TAG_MAP.items():
         if keyword in path_lower:
-            for t in keyword_tags:
-                if t not in matched:
-                    tags.append(t)
-                    matched.add(t)
+            tags.extend(keyword_tags)
+    return dedupe(tags)
+
+
+def dedupe(values: list[str]) -> list[str]:
     seen = set()
-    unique_tags = []
-    for t in tags:
-        if t.lower() not in seen:
-            seen.add(t.lower())
-            unique_tags.append(t)
-    return unique_tags
+    result = []
+    for value in values:
+        key = str(value).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(str(value))
+    return result
 
 
-def is_safe_tag(tag):
-    """X向けに弱い/危ないタグを落とす。"""
+def is_safe_tag(tag: str) -> bool:
     tag_lower = tag.lower().strip("#")
     if not tag_lower:
         return False
@@ -248,10 +330,9 @@ def is_safe_tag(tag):
     return True
 
 
-def filter_tags(tags, max_tags=12):
-    """重複・危険語・長すぎるタグを除去して上限数に丸める。"""
+def filter_tags(tags: list[str], max_tags: int = 12) -> list[str]:
+    safe: list[str] = []
     seen = set()
-    safe = []
     for tag in tags:
         cleaned = re.sub(r"\s+", "", str(tag)).strip("#")
         if not is_safe_tag(cleaned):
@@ -266,16 +347,14 @@ def filter_tags(tags, max_tags=12):
     return safe
 
 
-def sanitize_text(text):
-    """NGワードが含まれていたら除去する"""
+def sanitize_text(text: str) -> str:
     sanitized = text
     for ng in NG_WORDS:
-        sanitized = re.sub(re.escape(ng), '', sanitized, flags=re.IGNORECASE)
+        sanitized = re.sub(re.escape(ng), "", sanitized, flags=re.IGNORECASE)
     return sanitized
 
 
-def is_safe_category(category):
-    """ファイル/フォルダ由来のカテゴリが投稿本文向きか判定する。"""
+def is_safe_category(category: str) -> bool:
     value = sanitize_text(str(category)).strip()
     if not value:
         return False
@@ -291,42 +370,57 @@ def is_safe_category(category):
     return True
 
 
-def build_tweet_text(video_path, tags):
-    """ツイート本文を生成"""
-    parts = video_path.replace('\\', '/').split('/')
-    category = "Muscle"
-    for p in parts:
-        if p not in ['videos', ''] and '.' not in p and is_safe_category(p):
-            category = p
+def category_from_path(video_path: str) -> str:
+    for part in video_path.replace("\\", "/").split("/"):
+        if part and "." not in part and part != "videos" and is_safe_category(part):
+            return sanitize_text(part)
+    return "Muscle"
+
+
+def choose_from_insights(insights: dict, key: str, fallback: list[str]) -> str:
+    values = insights.get(key)
+    if isinstance(values, list):
+        clean = [str(value).strip() for value in values if str(value).strip()]
+        if clean:
+            return random.choice(clean)
+    return random.choice(fallback)
+
+
+def merge_insight_tags(tags: list[str], insights: dict) -> list[str]:
+    account_tags = insights.get("recommended_tags")
+    if isinstance(account_tags, list):
+        tags.extend(str(tag).strip("#") for tag in account_tags)
+    avoid_tags = insights.get("avoid_tags")
+    avoid = {str(tag).strip("#").lower() for tag in avoid_tags} if isinstance(avoid_tags, list) else set()
+    return [tag for tag in tags if str(tag).strip("#").lower() not in avoid]
+
+
+def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
+    category = category_from_path(video_path)
+    template = choose_from_insights(insights, "recommended_templates", TWEET_TEMPLATES)
+    cta = choose_from_insights(insights, "recommended_ctas", CTA_LINES)
+    hashtags = " ".join(f"#{tag}" for tag in filter_tags(merge_insight_tags(tags, insights)))
+
+    body = template.format(category=category, hashtags="").strip()
+    tweet = sanitize_text(f"{body}\n{cta}\n\n{hashtags}".strip())
+
+    if len(tweet) <= MAX_TWEET_CHARS:
+        return tweet
+
+    compact = f"{body}\n{cta}".strip()
+    trimmed_tags: list[str] = []
+    for tag in hashtags.split():
+        candidate = compact + "\n\n" + " ".join(trimmed_tags + [tag])
+        if len(candidate) > MAX_TWEET_CHARS:
             break
-    # categoryからNGワードを除去
-    category = sanitize_text(category).strip() or "筋肉女子"
-    if not is_safe_category(category):
-        category = "筋肉女子"
-    hashtags = ' '.join([f'#{t}' for t in filter_tags(tags)])
-    template = random.choice(TWEET_TEMPLATES)
-    tweet = template.format(
-        category=category,
-        hashtags=hashtags,
-    )
-    # 最終防御: ツイート全体からもNGワードを除去
-    tweet = sanitize_text(tweet)
+        trimmed_tags.append(tag)
+    tweet = compact + ("\n\n" + " ".join(trimmed_tags) if trimmed_tags else "")
     if len(tweet) > MAX_TWEET_CHARS:
-        body = tweet.split("\n\n", 1)[0]
-        trimmed_tags = []
-        for tag in hashtags.split():
-            candidate = body + "\n\n" + " ".join(trimmed_tags + [tag])
-            if len(candidate) > MAX_TWEET_CHARS:
-                break
-            trimmed_tags.append(tag)
-        tweet = body + ("\n\n" + " ".join(trimmed_tags) if trimmed_tags else "")
+        tweet = tweet[: MAX_TWEET_CHARS - 1].rstrip() + "..."
     return tweet
 
 
-# --- メディアアップロード（chunked） ---
-
-def upload_media_init(auth, file_size, media_type="video/mp4"):
-    """INIT: チャンクアップロード開始"""
+def upload_media_init(auth: OAuth1, file_size: int, media_type: str = "video/mp4") -> str:
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={
@@ -336,6 +430,7 @@ def upload_media_init(auth, file_size, media_type="video/mp4"):
             "media_category": "tweet_video",
         },
         auth=auth,
+        timeout=60,
     )
     resp.raise_for_status()
     media_id = resp.json()["media_id_string"]
@@ -343,23 +438,19 @@ def upload_media_init(auth, file_size, media_type="video/mp4"):
     return media_id
 
 
-def upload_media_append(auth, media_id, file_path, chunk_size=4 * 1024 * 1024):
-    """APPEND: ファイルをチャンクで送信"""
+def upload_media_append(auth: OAuth1, media_id: str, file_path: str, chunk_size: int = 4 * 1024 * 1024) -> int:
     segment = 0
-    with open(file_path, "rb") as f:
+    with open(file_path, "rb") as handle:
         while True:
-            chunk = f.read(chunk_size)
+            chunk = handle.read(chunk_size)
             if not chunk:
                 break
             resp = requests.post(
                 MEDIA_UPLOAD_URL,
-                data={
-                    "command": "APPEND",
-                    "media_id": media_id,
-                    "segment_index": segment,
-                },
+                data={"command": "APPEND", "media_id": media_id, "segment_index": segment},
                 files={"media": chunk},
                 auth=auth,
+                timeout=120,
             )
             resp.raise_for_status()
             print(f"APPEND segment {segment} OK")
@@ -367,57 +458,46 @@ def upload_media_append(auth, media_id, file_path, chunk_size=4 * 1024 * 1024):
     return segment
 
 
-def upload_media_finalize(auth, media_id):
-    """FINALIZE: アップロード完了"""
-    print(f"FINALIZE request: media_id={media_id}")
+def upload_media_finalize(auth: OAuth1, media_id: str) -> dict:
     resp = requests.post(
         MEDIA_UPLOAD_URL,
-        data={
-            "command": "FINALIZE",
-            "media_id": media_id,
-        },
+        data={"command": "FINALIZE", "media_id": media_id},
         auth=auth,
+        timeout=60,
     )
     print(f"FINALIZE status: {resp.status_code}")
     print(f"FINALIZE response: {resp.text}")
     resp.raise_for_status()
-    result = resp.json()
-    print(f"FINALIZE OK: {result}")
-    return result
+    return resp.json()
 
 
-def wait_for_processing(auth, media_id, max_wait=300):
-    """動画の処理完了を待つ"""
+def wait_for_processing(auth: OAuth1, media_id: str, max_wait: int = 300) -> bool:
     elapsed = 0
     while elapsed < max_wait:
         resp = requests.get(
             MEDIA_UPLOAD_URL,
-            params={
-                "command": "STATUS",
-                "media_id": media_id,
-            },
+            params={"command": "STATUS", "media_id": media_id},
             auth=auth,
+            timeout=60,
         )
         resp.raise_for_status()
         info = resp.json()
         state = info.get("processing_info", {}).get("state", "")
         if state == "succeeded":
-            print("Processing complete!")
+            print("Processing complete.")
             return True
-        elif state == "failed":
-            error = info.get("processing_info", {}).get("error", {})
-            print(f"Processing failed: {error}")
+        if state == "failed":
+            print(f"Processing failed: {info.get('processing_info', {}).get('error', {})}")
             return False
         wait_sec = info.get("processing_info", {}).get("check_after_secs", 5)
         print(f"Processing... state={state}, waiting {wait_sec}s")
         time.sleep(wait_sec)
         elapsed += wait_sec
-    print("Processing timeout!")
+    print("Processing timeout.")
     return False
 
 
-def upload_video(auth, file_path):
-    """動画をXにアップロード（chunked upload）"""
+def upload_video(auth: OAuth1, file_path: str) -> str | None:
     file_size = os.path.getsize(file_path)
     ext = os.path.splitext(file_path)[1].lower()
     media_type = "video/mp4" if ext == ".mp4" else "video/quicktime"
@@ -425,87 +505,89 @@ def upload_video(auth, file_path):
     media_id = upload_media_init(auth, file_size, media_type)
     upload_media_append(auth, media_id, file_path)
     result = upload_media_finalize(auth, media_id)
-
-    if "processing_info" in result:
-        if not wait_for_processing(auth, media_id):
-            return None
+    if "processing_info" in result and not wait_for_processing(auth, media_id):
+        return None
     return media_id
 
 
-def post_tweet(auth, text, media_id):
-    """ツイートを投稿"""
-    payload = {
-        "text": text,
-        "media": {
-            "media_ids": [media_id],
-        },
-    }
+def post_tweet(auth: OAuth1, text: str, media_id: str) -> dict:
     resp = requests.post(
         TWEET_URL,
-        json=payload,
+        json={"text": text, "media": {"media_ids": [media_id]}},
         auth=auth,
+        timeout=60,
     )
     resp.raise_for_status()
     result = resp.json()
-    tweet_id = result['data']['id']
-    print(f"Tweet posted! id={tweet_id}")
+    print(f"Tweet posted! id={result['data']['id']}")
     return result
 
 
-def main():
+def main() -> int:
     auth = get_oauth()
-    dry_run = is_dry_run()
+    dry_run = env_flag("X_DRY_RUN")
 
-    # 認証チェック
-    consumer_key = os.environ.get("X_CONSUMER_KEY", "")
-    access_token = os.environ.get("X_ACCESS_TOKEN", "")
-    if not all([consumer_key, access_token]):
-        print("Error: Missing X API credentials")
+    required = ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"]
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        message = f"Missing X API credentials: {', '.join(missing)}"
+        print(f"Error: {message}")
+        write_failure("auth", message)
         return 1
 
     print("Auth credentials loaded.")
     if "--check-auth-only" in sys.argv:
-        return 0 if verify_media_auth(auth) else AUTH_ERROR_EXIT_CODE
+        ok = verify_media_auth(auth)
+        if not ok:
+            write_failure("auth_check", "X media auth check failed")
+        return 0 if ok else AUTH_ERROR_EXIT_CODE
 
     if dry_run:
         print("DRY RUN: media upload and tweet publishing will be skipped.")
-
-    # Google Driveからダウンロード
-    videos = download_videos()
-    if videos is None:
-        print("Video download failed!")
-        return 1
-    if not videos:
-        print("No videos found!")
+    skip_post, schedule_msg = should_skip_by_schedule(dry_run)
+    print(schedule_msg)
+    if skip_post:
         return 0
 
-    # 未アップロード動画をフィルタ
+    videos = download_videos()
+    if videos is None:
+        write_failure("download", "Video download failed")
+        return 1
+    if not videos:
+        print("No videos found.")
+        return 0
+
     uploaded_log = load_uploaded_log()
     available = [v for v in videos if os.path.basename(v) not in uploaded_log]
     if not available:
-        print("All videos already uploaded!")
+        print("All videos already uploaded.")
         return 0
 
-    print(f"\nAvailable: {len(available)} / Total: {len(videos)}")
+    print(f"Available: {len(available)} / Total: {len(videos)}")
     video = random.choice(available)
     fname = os.path.basename(video)
     print(f"Selected: {fname}")
 
-    # タグ生成 & トレンドタグ追加 & ツイート本文作成
     tags = generate_tags(video)
+    try:
+        from trending import get_trending_tags
 
-    # Google Trendsからトレンドタグを追加
-    from trending import get_trending_tags
-    trend_tags = get_trending_tags(max_tags=5)
+        trend_tags = get_trending_tags(max_tags=5)
+    except Exception as exc:
+        print(f"Trend import/fetch failed (non-fatal): {exc}")
+        trend_tags = []
     if trend_tags:
-        seen = {t.lower() for t in tags}
-        for t in trend_tags:
-            if t.lower() not in seen:
-                tags.append(t)
-                seen.add(t.lower())
+        safe_trends = filter_tags(trend_tags, max_tags=5)
+        tags = dedupe(tags + safe_trends)
+        print(f"Merged trend tags: {safe_trends}")
+    else:
+        print("Merged trend tags: none")
 
-    tweet_text = build_tweet_text(video, tags)
-    print(f"Tags: {', '.join(tags[:10])}...")
+    insights = load_account_insights()
+    if insights:
+        print(f"Loaded account insights updated_at={insights.get('updated_at_jst', 'unknown')}")
+    tweet_text = build_tweet_text(video, tags, insights)
+    print(f"Tags: {', '.join(filter_tags(tags)[:10])}...")
     print(f"Tweet length: {len(tweet_text)} / {MAX_TWEET_CHARS}")
     print(f"Tweet:\n{tweet_text}\n")
 
@@ -513,39 +595,37 @@ def main():
         print(f"DRY RUN OK: selected={fname}")
         return 0
 
-    # 動画アップロード
     try:
         print("Uploading video...")
         media_id = upload_video(auth, video)
         if not media_id:
-            print("Video upload/processing failed!")
+            write_failure("media_upload", "Video upload/processing failed", file=fname)
             return 1
 
-        # ツイート投稿
         print("Posting tweet...")
         post_tweet(auth, tweet_text, media_id)
 
-        # 成功 → ログ保存
         uploaded_log.append(fname)
         save_uploaded_log(uploaded_log)
-        print(f"Success! Remaining: {len(available) - 1}")
+        print(f"Success. Remaining: {len(available) - 1}")
         return 0
-
-    except requests.exceptions.HTTPError as e:
-        print(f"HTTP Error: {e}")
-        if e.response is not None:
-            print(f"Status: {e.response.status_code}")
-            print(f"Response: {e.response.text}")
-            if is_auth_error_response(e.response):
+    except requests.exceptions.HTTPError as exc:
+        print(f"HTTP Error: {exc}")
+        if exc.response is not None:
+            print(f"Status: {exc.response.status_code}")
+            print(f"Response: {exc.response.text}")
+            write_failure("http_error", f"HTTP {exc.response.status_code}", response_text=exc.response.text[:800])
+            if is_auth_error_response(exc.response):
                 print("X API credentials are invalid, expired, or missing write/media permission.")
                 return AUTH_ERROR_EXIT_CODE
         else:
-            print("Response: N/A")
+            write_failure("http_error", "HTTP error without response object")
         return 1
-    except Exception as e:
-        print(f"Upload error: {e}")
+    except Exception as exc:
+        print(f"Upload error: {exc}")
+        write_failure("runtime_error", str(exc))
         return 1
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

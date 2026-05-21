@@ -2,7 +2,7 @@ name: X Auto Upload
 
 on:
   schedule:
-    # 毎日 JST 12:00 (UTC 3:00)。復旧直後なので低頻度で再開。
+    # Daily 12:00 JST (03:00 UTC). Keep this to one post per day.
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
@@ -35,94 +35,23 @@ jobs:
 
       - name: Check X media auth
         id: auth_check
-        env:
-          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
-          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
-        run: |
-          if python upload.py --check-auth-only; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=X API credentials need refresh::Access Token/Secret cannot authenticate media upload. Regenerate Read and Write tokens and update GitHub Secrets."
-          fi
-
-      - name: Download uploaded log
-        if: steps.auth_check.outputs.ok == 'true'
-        continue-on-error: true
-        run: |
-          gh run download --name uploaded-log --dir . 2>/dev/null || echo "No previous log found"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run upload (attempt 1)
-        id: attempt1
-        if: steps.auth_check.outputs.ok == 'true'
         continue-on-error: true
         env:
           X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
           X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
-          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
-          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
-          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-        run: python upload.py
+        run: python upload.py --check-auth-only
 
-      - name: Wait before retry 2
-        if: steps.auth_check.outputs.ok == 'true' && steps.attempt1.outcome == 'failure'
-        run: echo "Attempt 1 failed. Waiting 60s..." && sleep 60
-
-      - name: Run upload (attempt 2)
-        id: attempt2
-        if: steps.auth_check.outputs.ok == 'true' && steps.attempt1.outcome == 'failure'
-        continue-on-error: true
-        env:
-          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
-          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
-          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
-          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
-          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-        run: python upload.py
-
-      - name: Wait before retry 3
-        if: steps.auth_check.outputs.ok == 'true' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        run: echo "Attempt 2 failed. Waiting 120s..." && sleep 120
-
-      - name: Run upload (attempt 3)
-        id: attempt3
-        if: steps.auth_check.outputs.ok == 'true' && steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
-        env:
-          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
-          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
-          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
-          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
-          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
-          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
-          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-        run: python upload.py
-
-      - name: Upload uploaded log
-        if: ${{ (steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: uploaded-log
-          path: uploaded.json
-          if-no-files-found: ignore
-
-      - name: LINE notify on failure
-        if: ${{ (steps.auth_check.outputs.ok == 'false' || (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped'))) && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
+      - name: LINE notify on auth failure
+        if: ${{ steps.auth_check.outcome == 'failure' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
         env:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
-          if [ "${{ steps.auth_check.outputs.ok }}" = "false" ]; then
-            FAILURE_TEXT="⚠️ X API認証に失敗しました。Access Token/Secret を Read and Write 権限で再生成して GitHub Secrets を更新してください"
-          else
-            FAILURE_TEXT="⚠️ X(Twitter)自動投稿が3回リトライしても失敗しました"
+          if [ -z "${LINE_CHANNEL_TOKEN}" ] || [ -z "${LINE_USER_ID}" ]; then
+            echo "LINE secrets are not set; skipping auth failure notification."
+            exit 0
           fi
           curl -s -X POST https://api.line.me/v2/bot/message/push \
             -H "Content-Type: application/json" \
@@ -131,7 +60,111 @@ jobs:
               \"to\": \"${LINE_USER_ID}\",
               \"messages\": [{
                 \"type\": \"text\",
-                \"text\": \"${FAILURE_TEXT}\\n\\n時刻: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\\nログ: https://github.com/MuscleLove-777/x-auto-uploader/actions/runs/${{ github.run_id }}\"
+                \"text\": \"X auto-post stopped: X API media auth failed. Regenerate Read and Write Access Token/Secret and update GitHub Secrets.\\n\\nTime: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\\nLog: https://github.com/MuscleLove-777/x-auto-uploader/actions/runs/${{ github.run_id }}\"
+              }]
+            }"
+
+      - name: Stop on auth failure
+        if: steps.auth_check.outcome == 'failure'
+        run: |
+          echo "::error title=X API credentials need refresh::Access Token/Secret cannot authenticate media upload. Regenerate Read and Write tokens and update GitHub Secrets."
+          exit 1
+
+      - name: Download uploaded log
+        continue-on-error: true
+        run: gh run download --name uploaded-log --dir . 2>/dev/null || echo "No previous log found"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze account style
+        continue-on-error: true
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: python x_account_insights.py --output x_account_insights.json
+
+      - name: Run upload (attempt 1)
+        id: attempt1
+        continue-on-error: true
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
+          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_POST_HOURS_JST: '12'
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python upload.py
+
+      - name: Wait before retry 2
+        if: steps.attempt1.outcome == 'failure'
+        run: echo "Attempt 1 failed. Waiting 60s..." && sleep 60
+
+      - name: Run upload (attempt 2)
+        id: attempt2
+        if: steps.attempt1.outcome == 'failure'
+        continue-on-error: true
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
+          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_POST_HOURS_JST: '12'
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python upload.py
+
+      - name: Wait before retry 3
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        run: echo "Attempt 2 failed. Waiting 120s..." && sleep 120
+
+      - name: Run upload (attempt 3)
+        id: attempt3
+        if: steps.attempt1.outcome == 'failure' && steps.attempt2.outcome == 'failure'
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          GDRIVE_FOLDER_ID_FRIDAY: ${{ secrets.GDRIVE_FOLDER_ID_FRIDAY }}
+          GDRIVE_FOLDER_ID_DEFAULT: ${{ secrets.GDRIVE_FOLDER_ID_DEFAULT }}
+          X_POST_HOURS_JST: '12'
+          X_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: python upload.py
+
+      - name: Upload run state
+        if: ${{ (steps.attempt1.outcome == 'success' || steps.attempt2.outcome == 'success' || steps.attempt3.outcome == 'success') && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: uploaded-log
+          path: |
+            uploaded.json
+            x_account_insights.json
+            failure_log.jsonl
+          if-no-files-found: ignore
+
+      - name: LINE notify on failure
+        if: ${{ (steps.attempt1.outcome == 'failure' && (steps.attempt2.outcome == 'failure' || steps.attempt2.outcome == 'skipped') && (steps.attempt3.outcome == 'failure' || steps.attempt3.outcome == 'skipped')) && !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: |
+          if [ -z "${LINE_CHANNEL_TOKEN}" ] || [ -z "${LINE_USER_ID}" ]; then
+            echo "LINE secrets are not set; skipping failure notification."
+            exit 0
+          fi
+          curl -s -X POST https://api.line.me/v2/bot/message/push \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
+            -d "{
+              \"to\": \"${LINE_USER_ID}\",
+              \"messages\": [{
+                \"type\": \"text\",
+                \"text\": \"X auto-post failed after 3 attempts.\\n\\nTime: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\\nLog: https://github.com/MuscleLove-777/x-auto-uploader/actions/runs/${{ github.run_id }}\"
               }]
             }"
 
@@ -141,9 +174,13 @@ jobs:
           LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: |
+          if [ -z "${LINE_CHANNEL_TOKEN}" ] || [ -z "${LINE_USER_ID}" ]; then
+            echo "LINE secrets are not set; skipping success notification."
+            exit 0
+          fi
           RETRY_INFO=""
-          if [ "${{ steps.attempt2.outcome }}" = "success" ]; then RETRY_INFO="（2回目で成功）"; fi
-          if [ "${{ steps.attempt3.outcome }}" = "success" ]; then RETRY_INFO="（3回目で成功）"; fi
+          if [ "${{ steps.attempt2.outcome }}" = "success" ]; then RETRY_INFO=" on attempt 2"; fi
+          if [ "${{ steps.attempt3.outcome }}" = "success" ]; then RETRY_INFO=" on attempt 3"; fi
           curl -s -X POST https://api.line.me/v2/bot/message/push \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${LINE_CHANNEL_TOKEN}" \
@@ -151,6 +188,6 @@ jobs:
               \"to\": \"${LINE_USER_ID}\",
               \"messages\": [{
                 \"type\": \"text\",
-                \"text\": \"✅ X(Twitter)自動投稿 成功${RETRY_INFO}\\n時刻: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\"
+                \"text\": \"X auto-post succeeded${RETRY_INFO}.\\nTime: $(TZ=Asia/Tokyo date +%Y-%m-%d\ %H:%M\ JST)\"
               }]
             }"
