@@ -237,7 +237,24 @@ def save_uploaded_log(log: list[str]) -> None:
 
 def load_account_insights() -> dict:
     value = load_json_file(INSIGHTS_FILE, {})
-    return value if isinstance(value, dict) else {}
+    insights = value if isinstance(value, dict) else {}
+    # M国 content_pool（dashboard/autonomyが毎日再生成）をマージ。
+    # pool由来を先頭に、手動insightsを後置（choose系はランダム選択なので両方が候補になる）。
+    # pool取得失敗時は既存insights/ハードコードのみで動く（憲法第1条: 絶対に死なない）。
+    try:
+        from pool_loader import as_insights
+        pool_ins = as_insights("mature_muscle")
+        for key in ("recommended_tags", "recommended_templates", "recommended_ctas", "avoid_tags"):
+            existing = insights.get(key)
+            existing_list = list(existing) if isinstance(existing, list) else []
+            merged = list(pool_ins.get(key, [])) + existing_list
+            if merged:
+                insights[key] = merged
+        if pool_ins and not insights.get("updated_at_jst"):
+            insights["updated_at_jst"] = pool_ins.get("updated_at_jst", "")
+    except Exception as exc:
+        print(f"pool_loader merge skipped: {exc}")
+    return insights
 
 
 def get_gdrive_folder_id() -> str:
