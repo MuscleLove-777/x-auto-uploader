@@ -94,9 +94,12 @@ TWEET_TEMPLATES = [
     "Strength looks better when it is earned.\n{category}",
 ]
 
+# 流入計測の生命線: 投稿には必ず計測可能なリンクを1本入れる
+HUB_LINK = "https://musclelove-777.github.io/?utm_source=x&utm_medium=autopost"
+
 CTA_LINES = [
-    "More daily updates on MuscleLove.",
-    "Saving this one for the motivation file.",
+    f"More daily updates: {HUB_LINK}",
+    f"Full gallery & sites: {HUB_LINK}",
     "One strong post a day. See you tomorrow.",
     "More training inspiration in the profile flow.",
 ]
@@ -243,7 +246,7 @@ def load_account_insights() -> dict:
     # pool取得失敗時は既存insights/ハードコードのみで動く（憲法第1条: 絶対に死なない）。
     try:
         from pool_loader import as_insights
-        pool_ins = as_insights("mature_muscle")
+        pool_ins = as_insights("mature_muscle", platform="x")
         for key in ("recommended_tags", "recommended_templates", "recommended_ctas", "avoid_tags"):
             existing = insights.get(key)
             existing_list = list(existing) if isinstance(existing, list) else []
@@ -412,6 +415,17 @@ def merge_insight_tags(tags: list[str], insights: dict) -> list[str]:
     return [tag for tag in tags if str(tag).strip("#").lower() not in avoid]
 
 
+def ensure_link(tweet: str) -> str:
+    """投稿に計測可能なリンクが1本も無ければハブURLを必ず足す（流入ゼロ媒体の根治）。"""
+    if "http" in tweet:
+        return tweet
+    with_link = f"{tweet}\n{HUB_LINK}"
+    if len(with_link) <= MAX_TWEET_CHARS:
+        return with_link
+    keep = MAX_TWEET_CHARS - len(HUB_LINK) - 1
+    return tweet[:keep].rstrip() + "\n" + HUB_LINK
+
+
 def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
     category = category_from_path(video_path)
     template = choose_from_insights(insights, "recommended_templates", TWEET_TEMPLATES)
@@ -422,7 +436,7 @@ def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
     tweet = sanitize_text(f"{body}\n{cta}\n\n{hashtags}".strip())
 
     if len(tweet) <= MAX_TWEET_CHARS:
-        return tweet
+        return ensure_link(tweet)
 
     compact = f"{body}\n{cta}".strip()
     trimmed_tags: list[str] = []
@@ -434,7 +448,7 @@ def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
     tweet = compact + ("\n\n" + " ".join(trimmed_tags) if trimmed_tags else "")
     if len(tweet) > MAX_TWEET_CHARS:
         tweet = tweet[: MAX_TWEET_CHARS - 1].rstrip() + "..."
-    return tweet
+    return ensure_link(tweet)
 
 
 def upload_media_init(auth: OAuth1, file_size: int, media_type: str = "video/mp4") -> str:

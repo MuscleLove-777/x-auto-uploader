@@ -10,11 +10,25 @@ x_account_insights.json 互換の形式に変換する as_insights() を使え�
 既存uploaderは1-2行の変更で「毎日自動最適化」に接続できる（憲法第1条・第3条）。
 """
 import json
+import re
 from pathlib import Path
 
 HUB_URL = "https://musclelove-777.github.io/content_pool.json"
 LOCAL_POOL = Path(__file__).resolve().parent / "content_pool.json"
 HTTP_TIMEOUT = 10
+URL_RE = re.compile(r"https?://[^\s)\]>]+")
+
+
+def _with_utm(text: str, platform: str) -> str:
+    """CTA内のURLへ utm_source=<platform>&utm_medium=autopost を付与する。
+    GA4で「どの媒体の投稿が流入を生んだか」をreferrer喪失時も計測するための生命線。"""
+    def repl(m):
+        url = m.group(0)
+        if "utm_source=" in url:
+            return url
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}utm_source={platform}&utm_medium=autopost"
+    return URL_RE.sub(repl, text)
 
 
 def load_pool(lane: str) -> dict:
@@ -45,8 +59,9 @@ def load_pool(lane: str) -> dict:
     return out
 
 
-def as_insights(lane: str) -> dict:
-    """account_insights互換dictへ変換（recommended_tags/templates/ctas, avoid_tags）"""
+def as_insights(lane: str, platform: str = "") -> dict:
+    """account_insights互換dictへ変換（recommended_tags/templates/ctas, avoid_tags）。
+    platform指定時はCTA内URLへUTMを自動付与（utm_source=platform名）。"""
     pool = load_pool(lane)
     if not pool:
         return {}
@@ -69,6 +84,8 @@ def as_insights(lane: str) -> dict:
         ins["recommended_templates"] = templates
 
     ctas = [str(c).strip() for c in pool.get("cta_lines", []) if str(c).strip()]
+    if platform:
+        ctas = [_with_utm(c, platform) for c in ctas]
     if ctas:
         ins["recommended_ctas"] = ctas
 
