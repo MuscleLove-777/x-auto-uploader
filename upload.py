@@ -96,10 +96,13 @@ TWEET_TEMPLATES = [
 
 # 流入計測の生命線: 投稿には必ず計測可能なリンクを1本入れる
 HUB_LINK = "https://musclelove-777.github.io/?utm_source=x&utm_medium=autopost"
+GAMES_LINK = "https://musclelove-games.vercel.app/?utm_source=x&utm_medium=autopost"
 
 CTA_LINES = [
     f"More daily updates: {HUB_LINK}",
     f"Full gallery & sites: {HUB_LINK}",
+    f"Play free muscle girl mini games: {GAMES_LINK}",
+    f"60+ free browser games, no signup: {GAMES_LINK}",
     "One strong post a day. See you tomorrow.",
     "More training inspiration in the profile flow.",
 ]
