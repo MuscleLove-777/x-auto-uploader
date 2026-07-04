@@ -1,7 +1,12 @@
 # X Auto Uploader
 
-Google Driveの動画をX (Twitter)に自動投稿するシステム。
-GitHub Actionsで1日4回（JST 6:00/12:00/18:00/24:00）自動実行。
+Google Driveの動画・画像をX (Twitter)に自動投稿するシステム。
+GitHub Actionsで自動実行（現行スケジュールはJST 12:00の1日1回、`.github/workflows/upload.yml`参照）。
+
+- 対象メディア: mp4 / mov / jpg / jpeg / png / webp / gif からランダム選択
+- 文面: content_pool（毎日自動更新）＋ローカルの俺口調テンプレを合わせた候補からランダム生成
+- ハッシュタグ: ブランド核タグ＋Google Trends（取得失敗時は曜日・季節・コミュニティタグへ自動フォールバック）
+- 文字数: X基準の重み付きカウント（日本語=2字、URL=23字換算）で280字以内を保証
 
 ## セットアップ手順
 
@@ -72,8 +77,8 @@ Google Drive フォルダ/
 ## 制限事項（Free Tier）
 
 - 月500ツイートまで（1日4回 × 30日 = 120回なので余裕）
-- 動画は最大140秒・512MB
-- MP4/MOV形式のみ
+- 動画は最大140秒・512MB（MP4/MOV）
+- 画像は最大5MB（JPG/PNG/WEBP）、GIFは最大15MB
 - 読み取りAPI（タイムライン取得等）はほぼ使用不可
 
 ## Additional options (2026-05)

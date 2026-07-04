@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Post one Google Drive video to X.
+"""Post one Google Drive video or image to X.
 
 The workflow is intentionally conservative:
 - one live post per scheduled run
@@ -22,7 +22,18 @@ from requests_oauthlib import OAuth1
 JST = timezone(timedelta(hours=9))
 
 VIDEO_EXTENSIONS = {".mp4", ".mov"}
-MAX_FILE_SIZE = 512 * 1024 * 1024
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+MEDIA_EXTENSIONS = VIDEO_EXTENSIONS | IMAGE_EXTENSIONS
+# X media specs: (mime type, media_category, max bytes)
+MEDIA_SPECS = {
+    ".mp4": ("video/mp4", "tweet_video", 512 * 1024 * 1024),
+    ".mov": ("video/quicktime", "tweet_video", 512 * 1024 * 1024),
+    ".jpg": ("image/jpeg", "tweet_image", 5 * 1024 * 1024),
+    ".jpeg": ("image/jpeg", "tweet_image", 5 * 1024 * 1024),
+    ".png": ("image/png", "tweet_image", 5 * 1024 * 1024),
+    ".webp": ("image/webp", "tweet_image", 5 * 1024 * 1024),
+    ".gif": ("image/gif", "tweet_gif", 15 * 1024 * 1024),
+}
 UPLOADED_LOG = "uploaded.json"
 INSIGHTS_FILE = "x_account_insights.json"
 FAILURE_LOG = "failure_log.jsonl"
@@ -85,13 +96,38 @@ OFF_TOPIC_CATEGORY_WORDS = {
 NG_WORDS = {"atsuro", "atsurou"}
 HASHLIKE_RE = re.compile(r"^[a-f0-9]{6,}$", re.IGNORECASE)
 
+# フォルダ名(英語)を日本語の見出しに変換して「俺の言葉」に馴染ませる
+CATEGORY_JP = {
+    "training": "トレーニング",
+    "workout": "ワークアウト",
+    "posing": "ポージング",
+    "flex": "フレックス",
+    "muscle": "筋肉",
+    "abs": "腹筋",
+    "back": "背中",
+    "leg": "脚トレ",
+    "legs": "脚トレ",
+    "bicep": "上腕二頭筋",
+    "pullups": "懸垂",
+    "squat": "スクワット",
+    "deadlift": "デッドリフト",
+    "bench": "ベンチプレス",
+    "competition": "大会",
+}
+
+# 俺っぽい一言（content_poolのcaption_templatesと同じ口調）。
+# pool取得成功時はpool側が優先されるが、失敗時もこのフォールバックで口調を維持する。
 TWEET_TEMPLATES = [
-    "Training note: {category}\nStrong lines, steady work.",
-    "{category}\nNo shortcuts. Just reps and consistency.",
-    "Today's focus: {category}\nSmall progress still counts.",
-    "{category} energy.\nBuilt one session at a time.",
-    "Form, balance, and control.\n{category}",
-    "Strength looks better when it is earned.\n{category}",
+    "見てくれ、この圧。今日の{category}、格が違う。",
+    "これは仕上がりエグい。{category}のキレよ。",
+    "筋肉女子、やっぱ最高。今日は{category}。",
+    "バキバキ。でも美しい。{category}の完成形。",
+    "今日の一枚、強い。テーマは{category}。",
+    "継続は力なり。今日も{category}で積み上げ💪",
+    "この{category}、刺さる人には刺さるはず。",
+    "しょーがないなぁ、特別に見せてあげる。今日は{category}。",
+    "え、これ合法なの？ってレベルの{category}。",
+    "Strong is beautiful💪 {category}の美学。",
 ]
 
 # 流入計測の生命線: 投稿には必ず計測可能なリンクを1本入れる
@@ -274,24 +310,25 @@ def get_gdrive_folder_id() -> str:
     return default_folder
 
 
-def collect_video_files(dl_dir: str) -> list[str]:
+def collect_media_files(dl_dir: str) -> list[str]:
     files: list[str] = []
     for root, _dirs, filenames in os.walk(dl_dir):
         for fname in filenames:
             fpath = os.path.join(root, fname)
             ext = os.path.splitext(fname)[1].lower()
-            if ext not in VIDEO_EXTENSIONS:
+            spec = MEDIA_SPECS.get(ext)
+            if spec is None:
                 continue
             path_lower = fpath.lower()
             if any(word in path_lower for word in UNSAFE_TAG_WORDS):
                 print(f"Skipping unsafe filename: {fname}")
                 continue
-            if os.path.getsize(fpath) <= MAX_FILE_SIZE:
+            if os.path.getsize(fpath) <= spec[2]:
                 files.append(fpath)
     return files
 
 
-def download_videos() -> list[str] | None:
+def download_media() -> list[str] | None:
     import gdown
 
     dl_dir = "videos"
@@ -312,13 +349,13 @@ def download_videos() -> list[str] | None:
             gdown.download_folder(url, output=dl_dir, quiet=False)
     except Exception as exc:
         print(f"Download error: {exc}")
-        partial_files = collect_video_files(dl_dir)
+        partial_files = collect_media_files(dl_dir)
         if partial_files:
-            print(f"Continuing with {len(partial_files)} partially downloaded videos.")
+            print(f"Continuing with {len(partial_files)} partially downloaded files.")
             return partial_files
         return None
 
-    return collect_video_files(dl_dir)
+    return collect_media_files(dl_dir)
 
 
 def generate_tags(video_path: str) -> list[str]:
@@ -418,50 +455,89 @@ def merge_insight_tags(tags: list[str], insights: dict) -> list[str]:
     return [tag for tag in tags if str(tag).strip("#").lower() not in avoid]
 
 
+URL_IN_TWEET_RE = re.compile(r"https?://\S+")
+# X weighted length: これらのコードポイント範囲は1字、それ以外(日本語含む)は2字換算
+LIGHT_WEIGHT_RANGES = ((0, 4351), (8192, 8205), (8208, 8223), (8242, 8247))
+URL_WEIGHT = 23  # t.co短縮により全URLは23字換算
+
+
+def _weighted_chars(text: str) -> int:
+    total = 0
+    for ch in text:
+        cp = ord(ch)
+        total += 1 if any(lo <= cp <= hi for lo, hi in LIGHT_WEIGHT_RANGES) else 2
+    return total
+
+
+def weighted_len(text: str) -> int:
+    """X基準のツイート長（CJK=2字、URL=23字換算）。"""
+    total = 0
+    pos = 0
+    for match in URL_IN_TWEET_RE.finditer(text):
+        total += _weighted_chars(text[pos:match.start()]) + URL_WEIGHT
+        pos = match.end()
+    return total + _weighted_chars(text[pos:])
+
+
+def trim_to_weight(text: str, budget: int) -> str:
+    while text and weighted_len(text) > budget:
+        text = text[:-1]
+    return text.rstrip()
+
+
 def ensure_link(tweet: str) -> str:
     """投稿に計測可能なリンクが1本も無ければハブURLを必ず足す（流入ゼロ媒体の根治）。"""
     if "http" in tweet:
         return tweet
     with_link = f"{tweet}\n{HUB_LINK}"
-    if len(with_link) <= MAX_TWEET_CHARS:
+    if weighted_len(with_link) <= MAX_TWEET_CHARS:
         return with_link
-    keep = MAX_TWEET_CHARS - len(HUB_LINK) - 1
-    return tweet[:keep].rstrip() + "\n" + HUB_LINK
+    body = trim_to_weight(tweet, MAX_TWEET_CHARS - URL_WEIGHT - 1)
+    return body + "\n" + HUB_LINK
 
 
 def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
     category = category_from_path(video_path)
-    template = choose_from_insights(insights, "recommended_templates", TWEET_TEMPLATES)
+    category = CATEGORY_JP.get(category.lower(), category)
+    # poolテンプレとローカルの俺口調テンプレを常に両方候補にして文面の幅を出す
+    pool_templates = insights.get("recommended_templates")
+    candidates = [str(v).strip() for v in pool_templates if str(v).strip()] if isinstance(pool_templates, list) else []
+    template = random.choice(candidates + TWEET_TEMPLATES)
     cta = choose_from_insights(insights, "recommended_ctas", CTA_LINES)
     hashtags = " ".join(f"#{tag}" for tag in filter_tags(merge_insight_tags(tags, insights)))
 
     body = template.format(category=category, hashtags="").strip()
     tweet = sanitize_text(f"{body}\n{cta}\n\n{hashtags}".strip())
 
-    if len(tweet) <= MAX_TWEET_CHARS:
+    if weighted_len(tweet) <= MAX_TWEET_CHARS:
         return ensure_link(tweet)
 
     compact = f"{body}\n{cta}".strip()
     trimmed_tags: list[str] = []
     for tag in hashtags.split():
         candidate = compact + "\n\n" + " ".join(trimmed_tags + [tag])
-        if len(candidate) > MAX_TWEET_CHARS:
+        if weighted_len(candidate) > MAX_TWEET_CHARS:
             break
         trimmed_tags.append(tag)
     tweet = compact + ("\n\n" + " ".join(trimmed_tags) if trimmed_tags else "")
-    if len(tweet) > MAX_TWEET_CHARS:
-        tweet = tweet[: MAX_TWEET_CHARS - 1].rstrip() + "..."
+    if weighted_len(tweet) > MAX_TWEET_CHARS:
+        tweet = trim_to_weight(tweet, MAX_TWEET_CHARS - 3) + "..."
     return ensure_link(tweet)
 
 
-def upload_media_init(auth: OAuth1, file_size: int, media_type: str = "video/mp4") -> str:
+def upload_media_init(
+    auth: OAuth1,
+    file_size: int,
+    media_type: str = "video/mp4",
+    media_category: str = "tweet_video",
+) -> str:
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={
             "command": "INIT",
             "total_bytes": file_size,
             "media_type": media_type,
-            "media_category": "tweet_video",
+            "media_category": media_category,
         },
         auth=auth,
         timeout=60,
@@ -531,12 +607,12 @@ def wait_for_processing(auth: OAuth1, media_id: str, max_wait: int = 300) -> boo
     return False
 
 
-def upload_video(auth: OAuth1, file_path: str) -> str | None:
+def upload_media(auth: OAuth1, file_path: str) -> str | None:
     file_size = os.path.getsize(file_path)
     ext = os.path.splitext(file_path)[1].lower()
-    media_type = "video/mp4" if ext == ".mp4" else "video/quicktime"
+    media_type, media_category, _max_size = MEDIA_SPECS.get(ext, MEDIA_SPECS[".mp4"])
 
-    media_id = upload_media_init(auth, file_size, media_type)
+    media_id = upload_media_init(auth, file_size, media_type, media_category)
     upload_media_append(auth, media_id, file_path)
     result = upload_media_finalize(auth, media_id)
     if "processing_info" in result and not wait_for_processing(auth, media_id):
@@ -583,21 +659,21 @@ def main() -> int:
     if skip_post:
         return 0
 
-    videos = download_videos()
-    if videos is None:
-        write_failure("download", "Video download failed")
+    media_files = download_media()
+    if media_files is None:
+        write_failure("download", "Media download failed")
         return 1
-    if not videos:
-        print("No videos found.")
+    if not media_files:
+        print("No media files found.")
         return 0
 
     uploaded_log = load_uploaded_log()
-    available = [v for v in videos if os.path.basename(v) not in uploaded_log]
+    available = [v for v in media_files if os.path.basename(v) not in uploaded_log]
     if not available:
-        print("All videos already uploaded.")
+        print("All media already uploaded.")
         return 0
 
-    print(f"Available: {len(available)} / Total: {len(videos)}")
+    print(f"Available: {len(available)} / Total: {len(media_files)}")
     video = random.choice(available)
     fname = os.path.basename(video)
     print(f"Selected: {fname}")
@@ -612,7 +688,8 @@ def main() -> int:
         trend_tags = []
     if trend_tags:
         safe_trends = filter_tags(trend_tags, max_tags=5)
-        tags = dedupe(tags + safe_trends)
+        # トレンドタグは文字数制限で削られないよう、ブランド核タグ3個の直後に差し込む
+        tags = dedupe(tags[:3] + safe_trends + tags[3:])
         print(f"Merged trend tags: {safe_trends}")
     else:
         print("Merged trend tags: none")
@@ -622,7 +699,7 @@ def main() -> int:
         print(f"Loaded account insights updated_at={insights.get('updated_at_jst', 'unknown')}")
     tweet_text = build_tweet_text(video, tags, insights)
     print(f"Tags: {', '.join(filter_tags(tags)[:10])}...")
-    print(f"Tweet length: {len(tweet_text)} / {MAX_TWEET_CHARS}")
+    print(f"Tweet length (X weighted): {weighted_len(tweet_text)} / {MAX_TWEET_CHARS}")
     print(f"Tweet:\n{tweet_text}\n")
 
     if dry_run:
@@ -630,10 +707,10 @@ def main() -> int:
         return 0
 
     try:
-        print("Uploading video...")
-        media_id = upload_video(auth, video)
+        print("Uploading media...")
+        media_id = upload_media(auth, video)
         if not media_id:
-            write_failure("media_upload", "Video upload/processing failed", file=fname)
+            write_failure("media_upload", "Media upload/processing failed", file=fname)
             return 1
 
         print("Posting tweet...")

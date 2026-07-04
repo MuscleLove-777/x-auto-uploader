@@ -1,8 +1,61 @@
 # -*- coding: utf-8 -*-
 """
-Google Trendsからニッチ関連のトレンドタグを取得する共通モジュール
+Google Trendsからニッチ関連のトレンドタグを取得する共通モジュール。
+Google Trends取得に失敗しても、JSTの曜日・季節・コミュニティタグから
+「トレンドを意識したタグ」を必ず返す（絶対に空にならない）。
 """
 import random
+from datetime import datetime, timedelta, timezone
+
+JST = timezone(timedelta(hours=9))
+
+# 曜日連動タグ（X上で定番のモーメント系ハッシュタグ）
+WEEKDAY_TAGS = {
+    0: ["MondayMotivation", "月曜日の積み上げ"],
+    1: ["TransformationTuesday"],
+    2: ["WednesdayWorkout"],
+    3: ["ThursdayVibes"],
+    4: ["FlexFriday", "金曜日"],
+    5: ["WeekendWorkout", "土曜日"],
+    6: ["SundayReset"],
+}
+
+# 季節連動タグ（月で切り替え）
+SEASONAL_TAGS = {
+    "spring": ["春トレ", "新生活"],
+    "summer": ["夏ボディ", "summerbody"],
+    "autumn": ["スポーツの秋", "秋トレ"],
+    "winter": ["冬トレ", "バルクアップ"],
+}
+
+# コミュニティ系タグ（日本語圏の筋トレクラスタで回っている定番）
+COMMUNITY_TAGS = [
+    "筋トレ好きと繋がりたい",
+    "筋トレ女子",
+    "フィットネス女子",
+    "ジム女子",
+    "腹筋女子",
+    "筋トレ初心者",
+]
+
+
+def get_fallback_trend_tags(max_tags=5):
+    """外部API不要のトレンド風タグ（曜日1-2 + 季節1 + コミュニティ2）。"""
+    now = datetime.now(JST)
+    if now.month in (3, 4, 5):
+        season = "spring"
+    elif now.month in (6, 7, 8):
+        season = "summer"
+    elif now.month in (9, 10, 11):
+        season = "autumn"
+    else:
+        season = "winter"
+
+    tags = list(WEEKDAY_TAGS.get(now.weekday(), []))
+    tags.append(random.choice(SEASONAL_TAGS[season]))
+    tags.extend(random.sample(COMMUNITY_TAGS, min(2, len(COMMUNITY_TAGS))))
+    random.shuffle(tags)
+    return tags[:max_tags]
 
 # トレンド取得に使うシードキーワード（自分のニッチ）
 SEED_KEYWORDS = [
@@ -33,13 +86,13 @@ WEAK_TREND_KEYWORDS = {
 def get_trending_tags(max_tags=5):
     """
     Google Trendsから関連トレンドタグを取得する。
-    失敗しても空リストを返すだけで、既存処理には影響しない。
+    取得できない場合は曜日・季節ベースのフォールバックタグを返す（空にしない）。
     """
     try:
         from pytrends.request import TrendReq
     except ImportError:
-        print("pytrends not installed, skipping trend tags")
-        return []
+        print("pytrends not installed, using fallback trend tags")
+        return get_fallback_trend_tags(max_tags)
 
     trending_tags = []
 
@@ -88,13 +141,13 @@ def get_trending_tags(max_tags=5):
         result = unique[:max_tags]
         if result:
             print(f"Trending tags found: {result}")
-        else:
-            print("No relevant trending tags found")
-        return result
+            return result
+        print("No relevant trending tags found, using fallback trend tags")
+        return get_fallback_trend_tags(max_tags)
 
     except Exception as e:
-        print(f"Trend fetch failed (non-fatal): {e}")
-        return []
+        print(f"Trend fetch failed (non-fatal): {e}, using fallback trend tags")
+        return get_fallback_trend_tags(max_tags)
 
 
 def _is_relevant(query):
