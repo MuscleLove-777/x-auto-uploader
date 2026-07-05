@@ -1,7 +1,11 @@
 # X Auto Uploader
 
-Google Driveの動画・画像をX (Twitter)に自動投稿するシステム。
-GitHub Actionsで自動実行（現行スケジュールはJST 12:00の1日1回、`.github/workflows/upload.yml`参照）。
+Google Driveの動画・画像をX (Twitter)に投稿するシステム。
+現在は停止中のため、GitHub Actionsは手動dry-run確認のみ受け付ける。
+
+## Current status (2026-07-05)
+
+X auto-posting is paused. The workflow no longer runs on schedule and only accepts manual dry-run checks until a new explicit restart lane is approved.
 
 - 対象メディア: mp4 / mov / jpg / jpeg / png / webp / gif からランダム選択
 - 文面: content_pool（毎日自動更新）＋ローカルの俺口調テンプレを合わせた候補からランダム生成

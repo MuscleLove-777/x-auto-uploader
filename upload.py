@@ -15,9 +15,10 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
-import requests
-from requests_oauthlib import OAuth1
+requests = None
+OAuth1 = None
 
 JST = timezone(timedelta(hours=9))
 
@@ -151,8 +152,20 @@ def env_flag(name: str, default: bool = False) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
-def get_oauth() -> OAuth1:
-    return OAuth1(
+def require_x_http():
+    global requests, OAuth1
+    if requests is None or OAuth1 is None:
+        import requests as requests_module
+        from requests_oauthlib import OAuth1 as oauth1_class
+
+        requests = requests_module
+        OAuth1 = oauth1_class
+    return requests, OAuth1
+
+
+def get_oauth() -> Any:
+    _requests, oauth1_class = require_x_http()
+    return oauth1_class(
         os.environ.get("X_CONSUMER_KEY", ""),
         os.environ.get("X_CONSUMER_SECRET", ""),
         os.environ.get("X_ACCESS_TOKEN", ""),
@@ -216,7 +229,7 @@ def should_skip_by_schedule(dry_run: bool) -> tuple[bool, str]:
     )
 
 
-def is_auth_error_response(response: requests.Response | None) -> bool:
+def is_auth_error_response(response: Any | None) -> bool:
     if response is None:
         return False
     if response.status_code in {401, 403}:
@@ -232,7 +245,8 @@ def is_auth_error_response(response: requests.Response | None) -> bool:
     )
 
 
-def verify_media_auth(auth: OAuth1) -> bool:
+def verify_media_auth(auth: Any) -> bool:
+    requests_module, _oauth1_class = require_x_http()
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={
@@ -329,14 +343,14 @@ def collect_media_files(dl_dir: str) -> list[str]:
 
 
 def download_media() -> list[str] | None:
-    import gdown
-
     dl_dir = "videos"
     os.makedirs(dl_dir, exist_ok=True)
     folder_id = get_gdrive_folder_id()
     if not folder_id:
         print("Error: GDRIVE_FOLDER_ID_DEFAULT is not set.")
         return []
+
+    import gdown
 
     url = f"https://drive.google.com/drive/folders/{folder_id}"
     print(f"Downloading from Google Drive: {url}")
@@ -526,7 +540,7 @@ def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
 
 
 def upload_media_init(
-    auth: OAuth1,
+    auth: Any,
     file_size: int,
     media_type: str = "video/mp4",
     media_category: str = "tweet_video",
@@ -548,7 +562,7 @@ def upload_media_init(
     return media_id
 
 
-def upload_media_append(auth: OAuth1, media_id: str, file_path: str, chunk_size: int = 4 * 1024 * 1024) -> int:
+def upload_media_append(auth: Any, media_id: str, file_path: str, chunk_size: int = 4 * 1024 * 1024) -> int:
     segment = 0
     with open(file_path, "rb") as handle:
         while True:
@@ -568,7 +582,7 @@ def upload_media_append(auth: OAuth1, media_id: str, file_path: str, chunk_size:
     return segment
 
 
-def upload_media_finalize(auth: OAuth1, media_id: str) -> dict:
+def upload_media_finalize(auth: Any, media_id: str) -> dict:
     resp = requests.post(
         MEDIA_UPLOAD_URL,
         data={"command": "FINALIZE", "media_id": media_id},
@@ -581,7 +595,7 @@ def upload_media_finalize(auth: OAuth1, media_id: str) -> dict:
     return resp.json()
 
 
-def wait_for_processing(auth: OAuth1, media_id: str, max_wait: int = 300) -> bool:
+def wait_for_processing(auth: Any, media_id: str, max_wait: int = 300) -> bool:
     elapsed = 0
     while elapsed < max_wait:
         resp = requests.get(
@@ -607,7 +621,7 @@ def wait_for_processing(auth: OAuth1, media_id: str, max_wait: int = 300) -> boo
     return False
 
 
-def upload_media(auth: OAuth1, file_path: str) -> str | None:
+def upload_media(auth: Any, file_path: str) -> str | None:
     file_size = os.path.getsize(file_path)
     ext = os.path.splitext(file_path)[1].lower()
     media_type, media_category, _max_size = MEDIA_SPECS.get(ext, MEDIA_SPECS[".mp4"])
@@ -620,7 +634,7 @@ def upload_media(auth: OAuth1, file_path: str) -> str | None:
     return media_id
 
 
-def post_tweet(auth: OAuth1, text: str, media_id: str) -> dict:
+def post_tweet(auth: Any, text: str, media_id: str) -> dict:
     resp = requests.post(
         TWEET_URL,
         json={"text": text, "media": {"media_ids": [media_id]}},
@@ -634,19 +648,23 @@ def post_tweet(auth: OAuth1, text: str, media_id: str) -> dict:
 
 
 def main() -> int:
-    auth = get_oauth()
-    dry_run = env_flag("X_DRY_RUN")
+    dry_run = env_flag("X_DRY_RUN") or "--dry-run" in sys.argv
 
     required = ["X_CONSUMER_KEY", "X_CONSUMER_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"]
     missing = [name for name in required if not os.environ.get(name)]
-    if missing:
+    if missing and not dry_run:
         message = f"Missing X API credentials: {', '.join(missing)}"
         print(f"Error: {message}")
         write_failure("auth", message)
         return 1
 
-    print("Auth credentials loaded.")
+    if missing and dry_run:
+        print(f"DRY RUN: X API credentials not required ({', '.join(missing)} missing).")
+    else:
+        print("Auth credentials loaded.")
+    auth = None if dry_run else get_oauth()
     if "--check-auth-only" in sys.argv:
+        auth = get_oauth()
         ok = verify_media_auth(auth)
         if not ok:
             write_failure("auth_check", "X media auth check failed")

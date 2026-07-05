@@ -1,25 +1,22 @@
 name: X Auto Upload
 
 on:
-  schedule:
-    # Daily 12:00 JST (03:00 UTC). Keep this to one post per day.
-    - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Post without publishing?'
+        description: 'Paused lane: only dry-run is allowed.'
         required: false
         default: 'true'
         type: choice
         options:
           - 'true'
-          - 'false'
 
 permissions:
   contents: write
 
 jobs:
   upload:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,6 +31,7 @@ jobs:
         run: pip install requests requests-oauthlib gdown pytrends
 
       - name: Check X media auth
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true') }}
         id: auth_check
         continue-on-error: true
         env:
@@ -65,7 +63,7 @@ jobs:
             }"
 
       - name: Stop on auth failure
-        if: steps.auth_check.outcome == 'failure'
+        if: ${{ steps.auth_check.outcome == 'failure' }}
         run: |
           echo "::error title=X API credentials need refresh::Access Token/Secret cannot authenticate media upload. Regenerate Read and Write tokens and update GitHub Secrets."
           exit 1
