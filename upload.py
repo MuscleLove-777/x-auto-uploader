@@ -7,6 +7,8 @@ The workflow is intentionally conservative:
 - skip unsafe filenames/tags
 - use optional account insights generated from recent X posts
 """
+from publication_evidence import record_publication_result, identity_from_url
+from promotion_policy import CANONICAL_URL, canonical_cta, strip_plain_promotion, normalize_plain_promotion, normalize_html_promotion
 
 import json
 import os
@@ -500,14 +502,10 @@ def trim_to_weight(text: str, budget: int) -> str:
 
 
 def ensure_link(tweet: str) -> str:
-    """投稿に計測可能なリンクが1本も無ければハブURLを必ず足す（流入ゼロ媒体の根治）。"""
-    if "http" in tweet:
-        return tweet
-    with_link = f"{tweet}\n{HUB_LINK}"
-    if weighted_len(with_link) <= MAX_TWEET_CHARS:
-        return with_link
-    body = trim_to_weight(tweet, MAX_TWEET_CHARS - URL_WEIGHT - 1)
-    return body + "\n" + HUB_LINK
+    """Keep one canonical destination within the platform weighted limit."""
+    body = strip_plain_promotion(tweet)
+    body = trim_to_weight(body, MAX_TWEET_CHARS - URL_WEIGHT - 1).rstrip()
+    return body + "\n" + CANONICAL_URL if body else CANONICAL_URL
 
 
 def build_tweet_text(video_path: str, tags: list[str], insights: dict) -> str:
@@ -732,7 +730,9 @@ def main() -> int:
             return 1
 
         print("Posting tweet...")
-        post_tweet(auth, tweet_text, media_id)
+        post_result = post_tweet(auth, tweet_text, media_id)
+        published_id = (post_result.get("data") or {}).get("id") if isinstance(post_result, dict) else None
+        record_publication_result("x", {"caption": tweet_text}, post_id=published_id, confirmed=True)
 
         uploaded_log.append(fname)
         save_uploaded_log(uploaded_log)
